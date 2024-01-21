@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql/driver"
+	"log"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
@@ -157,6 +158,193 @@ func TestPlacePoster(t *testing.T) {
 			mock.ExpectExec("insert").WithArgs(tc.partyId, tc.userId, tc.location.GetLat(), tc.location.GetLng()).WillReturnResult(tc.returnResult)
 
 			res, err := server.PlacePoster(ctx, &pb.PlacementRequest{UserId: tc.userId, PartyId: tc.partyId, Location: tc.location})
+
+			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
+				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
+			}
+
+			if res.Code != tc.wantCode {
+				t.Fatalf("got code %v want code %v", res.Code, tc.wantCode)
+			}
+		})
+	}
+}
+
+func TestRegisterAccount(t *testing.T) {
+	tests := []struct {
+		name                string
+		username            string
+		firstName           string
+		lastName            string
+		password            string
+		wantErr             bool
+		returnResult        driver.Result
+		accountExistsResult *sqlmock.Rows
+		wantCode            pb.ResponseCode
+	}{
+		{
+			name:                "username not set",
+			username:            "",
+			firstName:           "Michael",
+			lastName:            "lastName",
+			password:            "fakePassword",
+			returnResult:        sqlmock.NewResult(1, 2),
+			accountExistsResult: sqlmock.NewRows([]string{"username", "userId"}),
+			wantErr:             true,
+			wantCode:            pb.ResponseCode_FAILED,
+		},
+		{
+			name:                "first name not set",
+			username:            "test_username",
+			firstName:           "",
+			lastName:            "lastName",
+			password:            "fakePassword",
+			returnResult:        sqlmock.NewResult(1, 2),
+			accountExistsResult: sqlmock.NewRows([]string{"username", "userId"}),
+			wantErr:             true,
+			wantCode:            pb.ResponseCode_FAILED,
+		},
+		{
+			name:                "last name not set",
+			username:            "test_username",
+			firstName:           "Michael",
+			lastName:            "",
+			password:            "fakePassword",
+			returnResult:        sqlmock.NewResult(1, 2),
+			accountExistsResult: sqlmock.NewRows([]string{"username", "userId"}),
+			wantErr:             true,
+			wantCode:            pb.ResponseCode_FAILED,
+		},
+		{
+			name:                "password not set",
+			username:            "test_username",
+			firstName:           "Michael",
+			lastName:            "test_lastname",
+			password:            "",
+			returnResult:        sqlmock.NewResult(1, 2),
+			accountExistsResult: sqlmock.NewRows([]string{"username", "userId"}),
+			wantErr:             true,
+			wantCode:            pb.ResponseCode_FAILED,
+		},
+		{
+			name:                "username already exists",
+			username:            "test_username",
+			firstName:           "Michael",
+			lastName:            "test_lastname",
+			password:            "test_password",
+			returnResult:        sqlmock.NewResult(1, 2),
+			accountExistsResult: sqlmock.NewRows([]string{"username", "userId"}).AddRow("test_username", 1),
+			wantErr:             true,
+			wantCode:            pb.ResponseCode_FAILED,
+		},
+		{
+			name:                "success",
+			username:            "test_username",
+			firstName:           "Michael",
+			lastName:            "test_last_name",
+			password:            "fakePassword",
+			returnResult:        sqlmock.NewResult(1, 2),
+			accountExistsResult: sqlmock.NewRows([]string{"username", "userId"}),
+			wantErr:             false,
+			wantCode:            pb.ResponseCode_OK,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, mock, err := sqlmock.New()
+			defer db.Close()
+			if err != nil {
+				t.Fatalf("an error occured while creating fake sql database %v", err)
+
+			}
+			server := &server{DB: db}
+			mock.ExpectQuery("select").WithArgs(tc.username).WillReturnRows(tc.accountExistsResult)
+			mock.ExpectExec("insert").WithArgs(tc.username, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 2))
+			mock.ExpectExec("insert").WithArgs(1, tc.firstName, tc.lastName).WillReturnResult(sqlmock.NewResult(1, 2))
+			res, err := server.RegisterAccount(ctx,
+				&pb.RegisterAccountRequest{
+					Username:  tc.username,
+					Password:  tc.password,
+					FirstName: tc.firstName,
+					LastName:  tc.lastName,
+				})
+
+			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
+				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
+			}
+
+			if res.Code != tc.wantCode {
+				t.Fatalf("got code %v want code %v", res.Code, tc.wantCode)
+			}
+		})
+	}
+}
+
+func TestLoginAccount(t *testing.T) {
+	pwhash, err := hash("fakePassword")
+	if err != nil {
+		log.Fatalf("failed to create password hash")
+	}
+	tests := []struct {
+		name        string
+		username    string
+		password    string
+		wantErr     bool
+		loginResult *sqlmock.Rows
+		wantCode    pb.ResponseCode
+	}{
+		{
+			name:        "username not set",
+			username:    "",
+			password:    "fakePassword",
+			loginResult: sqlmock.NewRows([]string{"userID", "partyID", "username", "pwhash", "partyName"}).AddRow(1, 1, "test", "fake", "party"),
+			wantErr:     true,
+			wantCode:    pb.ResponseCode_FAILED,
+		},
+		{
+			name:        "password not set",
+			username:    "test_username",
+			password:    "",
+			loginResult: sqlmock.NewRows([]string{"userID", "partyID", "username", "pwhash", "partyName"}).AddRow(1, 1, "test", "fake", "party"),
+			wantErr:     true,
+			wantCode:    pb.ResponseCode_FAILED,
+		},
+		{
+			name:        "username doesn't exist",
+			username:    "test_username",
+			password:    "test_password",
+			loginResult: sqlmock.NewRows([]string{"userID", "partyID", "username", "pwhash", "partyName"}),
+			wantErr:     true,
+			wantCode:    pb.ResponseCode_FAILED,
+		},
+		{
+			name:        "success",
+			username:    "test_username",
+			password:    "fakePassword",
+			loginResult: sqlmock.NewRows([]string{"userID", "partyID", "username", "pwhash", "partyName"}).AddRow(1, 1, "test_username", pwhash, "party"),
+			wantErr:     false,
+			wantCode:    pb.ResponseCode_OK,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, mock, err := sqlmock.New()
+			defer db.Close()
+			if err != nil {
+				t.Fatalf("an error occured while creating fake sql database %v", err)
+			}
+			server := &server{DB: db}
+			mock.ExpectQuery("select").WithArgs(tc.username).WillReturnRows(tc.loginResult)
+
+			res, err := server.LoginAccount(ctx,
+				&pb.LoginRequest{
+					Username: tc.username,
+					Password: tc.password,
+				})
 
 			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
 				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
