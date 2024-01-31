@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/michaelc445/fyp/tokenService"
 	"log"
 	"net"
 	"time"
@@ -19,13 +20,15 @@ import (
 )
 
 var (
-	port                 = flag.Int("port", 50051, "The server port")
-	placePosterQuery     = "insert into fyp_schema.posters (partyId, userId, created,updated,location) values (?,?,NOW(),NOW(),point(?,?))"
-	checkPosterQuery     = "select partyId, posterId from fyp_schema.posters where posterId = ?"
-	removePosterQuery    = "DELETE from fyp_schema.posters where posterId = ? and partyId = ?"
-	registerAccountQuery = "insert into fyp_schema.users (partyId, username, pwhash) values (1,?,?)"
-	accountExistsQuery   = "select username, userId from fyp_schema.users where username = ?"
-	addUserinfoQuery     = "insert into fyp_schema.userinfo (userID, firstName, lastName,location) values (?,?,?,null)"
+	removePosterMaxDistance = 20
+	port                    = flag.Int("port", 50051, "The server port")
+	placePosterQuery        = "insert into fyp_schema.posters (partyId, userId, created,updated,location) values (?,?,NOW(),NOW(),point(?,?))"
+	checkPosterQuery        = "select partyId, posterId from fyp_schema.posters where posterId = ?"
+	removePosterQuery       = "DELETE from fyp_schema.posters where posterId = ? and partyId = ?"
+	registerAccountQuery    = "insert into fyp_schema.users (partyId, username, pwhash) values (1,?,?)"
+	accountExistsQuery      = "select username, userId from fyp_schema.users where username = ?"
+	addUserinfoQuery        = "insert into fyp_schema.userinfo (userID, firstName, lastName,location) values (?,?,?,null)"
+	posterDistanceQuery     = "select posterID, ST_Distance_Sphere(location, point(?,?)) as distance from fyp_schema.posters where partyID = ? and removed is null having distance < ? order by distance asc limit 1;"
 )
 
 type server struct {
@@ -44,18 +47,22 @@ type Account struct {
 	Pwhash    string
 	PartyName string
 }
+type Poster struct {
+	posterId int32
+	distance float64
+}
 
 func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.PlacementResponse, error) {
-	if in.Location == nil {
+	if in.GetLocation() == nil {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("Location of poster not set")
 	}
-	if in.UserId == 0 {
+	if in.GetUserId() == 0 {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("userId not set")
 	}
-	if in.PartyId == 0 {
+	if in.GetPartyId() == 0 {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("posterId not set")
 	}
-	res, err := s.DB.Exec(placePosterQuery, in.PartyId, in.UserId, in.Location.Lat, in.Location.Lng)
+	res, err := s.DB.Exec(placePosterQuery, in.GetPartyId(), in.GetUserId(), in.GetLocation().Lat, in.GetLocation().Lng)
 	if err != nil {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to insert poster to database: %v", err)
 	}
@@ -67,55 +74,58 @@ func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.
 }
 
 func (s *server) RemovePoster(ctx context.Context, in *pb.RemovePosterRequest) (*pb.RemovePosterResponse, error) {
-	if in.UserId == 0 {
+	if in.GetUserId() == 0 {
 		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("userId not set")
 	}
-	if in.PosterId == 0 {
-		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("posterId not set")
+	if in.GetLocation() == nil {
+		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("poster location not set")
 	}
-	if in.PartyId == 0 {
+	if in.GetPartyId() == 0 {
 		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("partyId not set")
 	}
-	// check that the poster exists / belongs to correct party
-	idResponse, err := s.DB.Query(checkPosterQuery, in.PosterId)
+
+	// find poster belonging to party that is closest to location
+	location := in.GetLocation()
+
+	res, err := s.DB.Query(posterDistanceQuery, location.GetLat(), location.GetLng(), removePosterMaxDistance)
 	if err != nil {
-		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query database: %v", err)
+		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query posters %v", err)
 	}
-	defer idResponse.Close()
-	// check that there was a response, if not then the poster does not exist
-	if !idResponse.Next() {
-		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("no poster found with id: %v", in.PosterId)
+	defer res.Close()
+
+	// check that there was a row returned
+
+	if !res.Next() {
+		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("no posters found within %d meters", removePosterMaxDistance)
 	}
-	var result Result
-	err = idResponse.Scan(&result.PartyId, &result.PosterId)
+	var poster Poster
+	err = res.Scan(&poster.posterId, &poster.distance)
 	if err != nil {
 		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to scan sql result: %v", err)
 	}
-	if result.PartyId != in.PartyId {
-		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("poster belongs to a different party. expected party: %v got party: %v", in.PartyId, result.PartyId)
-	}
-	_, err = s.DB.Exec(removePosterQuery, in.PosterId, in.PartyId)
+
+	_, err = s.DB.Exec(removePosterQuery, poster.posterId, in.GetPartyId())
 	if err != nil {
-		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to execute query err: %v", err)
+		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to remove poster: %v", err)
 	}
 	return &pb.RemovePosterResponse{Code: pb.ResponseCode_OK}, nil
 }
 
 func (s *server) RegisterAccount(ctx context.Context, in *pb.RegisterAccountRequest) (*pb.RegisterAccountResponse, error) {
-	if in.Username == "" {
+	if in.GetUsername() == "" {
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("username can't be empty")
 	}
-	if in.FirstName == "" {
+	if in.GetFirstName() == "" {
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("first name can't be empty")
 	}
-	if in.LastName == "" {
+	if in.GetLastName() == "" {
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("last name can't be empty")
 	}
-	if in.Password == "" {
+	if in.GetPassword() == "" {
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("password can't be empty")
 	}
 	// check does the username already exist
-	res, err := s.DB.Query(accountExistsQuery, in.Username)
+	res, err := s.DB.Query(accountExistsQuery, in.GetUsername())
 	defer res.Close()
 	if err != nil {
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query username from database: %v", err)
@@ -123,12 +133,12 @@ func (s *server) RegisterAccount(ctx context.Context, in *pb.RegisterAccountRequ
 	if res.Next() {
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("username already exists")
 	}
-	pwhash, err := hash(in.Password)
+	pwhash, err := hash(in.GetPassword())
 	if err != nil {
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to create password hash: %v", err)
 	}
 	// add acount to users table
-	addAccountRes, err := s.DB.Exec(registerAccountQuery, in.Username, pwhash)
+	addAccountRes, err := s.DB.Exec(registerAccountQuery, in.GetUsername(), pwhash)
 	if err != nil {
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to add account to database: %v", err)
 	}
@@ -137,7 +147,7 @@ func (s *server) RegisterAccount(ctx context.Context, in *pb.RegisterAccountRequ
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to read userid from database: %v", err)
 	}
 	// add account to userinfo table
-	_, err = s.DB.Exec(addUserinfoQuery, userId, in.FirstName, in.LastName)
+	_, err = s.DB.Exec(addUserinfoQuery, userId, in.GetFirstName(), in.GetLastName())
 	if err != nil {
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to add account to userinfo database: %v", err)
 	}
@@ -145,16 +155,16 @@ func (s *server) RegisterAccount(ctx context.Context, in *pb.RegisterAccountRequ
 }
 
 func (s *server) LoginAccount(ctx context.Context, in *pb.LoginRequest) (*pb.LoginResponse, error) {
-	if in.Username == "" {
+	if in.GetUsername() == "" {
 		return &pb.LoginResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("username not supplied")
 	}
-	if in.Password == "" {
+	if in.GetPassword() == "" {
 		return &pb.LoginResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("password not supplied")
 	}
 
-	res, err := s.DB.Query("select users.userID,users.partyID,users.username,users.pwhash,parties.partyName from fyp_schema.users join fyp_schema.parties on users.partyID = parties.partyID where users.username = ?", in.Username)
+	res, err := s.DB.Query("select users.userID,users.partyID,users.username,users.pwhash,parties.partyName from fyp_schema.users join fyp_schema.parties on users.partyID = parties.partyID where users.username = ?", in.GetUsername())
 	if err != nil {
-		return &pb.LoginResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query database for username %v. err: %v", in.Username, err)
+		return &pb.LoginResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query database for username %v. err: %v", in.GetUsername(), err)
 	}
 	// not returning error, this means username does not exist in database
 	if !res.Next() {
@@ -165,12 +175,13 @@ func (s *server) LoginAccount(ctx context.Context, in *pb.LoginRequest) (*pb.Log
 	if err != nil {
 		return &pb.LoginResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to scan sql result: %v", err)
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(result.Pwhash), []byte(in.Password)); err != nil {
+	defer res.Close()
+	if err := bcrypt.CompareHashAndPassword([]byte(result.Pwhash), []byte(in.GetPassword())); err != nil {
 		return &pb.LoginResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to login")
 	}
 
 	// generate JWT here and send back in authkey field
-	claims := UserClaims{
+	claims := tokenService.UserClaims{
 		UserID:   result.UserId,
 		Username: result.Username,
 		StandardClaims: jwt.StandardClaims{
@@ -178,7 +189,7 @@ func (s *server) LoginAccount(ctx context.Context, in *pb.LoginRequest) (*pb.Log
 			ExpiresAt: time.Now().Add(time.Hour * 48).Unix(),
 		},
 	}
-	accessToken, err := NewAccessToken(claims)
+	accessToken, err := tokenService.NewAccessToken(claims)
 	if err != nil {
 		return &pb.LoginResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to create access token %v", err)
 	}

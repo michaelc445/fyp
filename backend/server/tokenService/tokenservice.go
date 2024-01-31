@@ -1,4 +1,4 @@
-package main
+package tokenService
 
 // code taken from tutorial here: https://pascalallen.medium.com/jwt-authentication-with-go-242215a9b4f8
 import (

@@ -17,6 +17,7 @@ func TestRemovePoster(t *testing.T) {
 		name       string
 		userId     int32
 		partyId    int32
+		location   *pb.Location
 		posterId   int32
 		wantErr    bool
 		returnRows *sqlmock.Rows
@@ -26,8 +27,9 @@ func TestRemovePoster(t *testing.T) {
 			name:       "poster does not exist",
 			userId:     1,
 			partyId:    1,
+			location:   &pb.Location{Lat: 1.0, Lng: 1.0},
 			posterId:   1,
-			returnRows: sqlmock.NewRows([]string{"partyId", "posterId"}),
+			returnRows: sqlmock.NewRows([]string{"posterId", "distance"}),
 			wantCode:   pb.ResponseCode_FAILED,
 			wantErr:    true,
 		},
@@ -35,32 +37,36 @@ func TestRemovePoster(t *testing.T) {
 			name:       "poster does not belong to party",
 			userId:     1,
 			partyId:    1,
+			location:   &pb.Location{Lat: 1, Lng: 1},
 			posterId:   1,
-			returnRows: sqlmock.NewRows([]string{"partyId", "posterId"}).AddRow(2, 1),
+			returnRows: sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(2, 1),
 			wantCode:   pb.ResponseCode_FAILED,
 			wantErr:    true,
 		},
 		{
 			name:       "userId not set",
 			partyId:    1,
+			location:   &pb.Location{Lat: 1, Lng: 1},
 			posterId:   1,
-			returnRows: sqlmock.NewRows([]string{"partyId", "posterId"}).AddRow(1, 1),
+			returnRows: sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(1, 1),
 			wantErr:    true,
 			wantCode:   pb.ResponseCode_FAILED,
 		},
 		{
 			name:       "partyId not set",
 			userId:     1,
+			location:   &pb.Location{Lat: 1, Lng: 1},
 			posterId:   1,
-			returnRows: sqlmock.NewRows([]string{"partyId", "posterId"}).AddRow(1, 1),
+			returnRows: sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(1, 1),
 			wantErr:    true,
 			wantCode:   pb.ResponseCode_FAILED,
 		},
 		{
-			name:       "posterId not set",
+			name:       "location not set",
 			userId:     1,
 			partyId:    1,
-			returnRows: sqlmock.NewRows([]string{"partyId", "posterId"}).AddRow(1, 1),
+			posterId:   1,
+			returnRows: sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(1, 1),
 			wantErr:    true,
 			wantCode:   pb.ResponseCode_FAILED,
 		},
@@ -68,8 +74,9 @@ func TestRemovePoster(t *testing.T) {
 			name:       "success",
 			userId:     1,
 			partyId:    1,
+			location:   &pb.Location{Lat: 1, Lng: 1},
 			posterId:   1,
-			returnRows: sqlmock.NewRows([]string{"partyId", "posterId"}).AddRow(1, 1),
+			returnRows: sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(1, 1),
 			wantErr:    false,
 			wantCode:   pb.ResponseCode_OK,
 		},
@@ -85,9 +92,10 @@ func TestRemovePoster(t *testing.T) {
 
 			}
 			server := &server{DB: db}
-			mock.ExpectQuery(checkPosterQuery).WithArgs(tc.posterId).WillReturnRows(tc.returnRows)
+			mock.ExpectQuery("select").WithArgs(tc.location.GetLat(), tc.location.GetLng(), removePosterMaxDistance).WillReturnRows(tc.returnRows)
 			mock.ExpectExec("DELETE").WithArgs(tc.posterId, tc.partyId).WillReturnResult(sqlmock.NewResult(0, 0))
-			res, err := server.RemovePoster(ctx, &pb.RemovePosterRequest{UserId: tc.userId, PartyId: tc.partyId, PosterId: tc.posterId})
+
+			res, err := server.RemovePoster(ctx, &pb.RemovePosterRequest{UserId: tc.userId, PartyId: tc.partyId, Location: tc.location})
 
 			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
 				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)

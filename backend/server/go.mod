@@ -5,7 +5,7 @@ go 1.21.6
 require (
 	github.com/go-sql-driver/mysql v1.7.1
 	github.com/golang/protobuf v1.5.3
-	github.com/michaelc445/proto v0.0.0-20240118234031-e5a0c2c71768 // indirect
+	github.com/michaelc445/proto v0.0.0-20240131155717-35bdd9ee90d3 // indirect
 	google.golang.org/grpc v1.60.1
 	google.golang.org/protobuf v1.32.0
 )

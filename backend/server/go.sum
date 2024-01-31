@@ -14,6 +14,8 @@ github.com/google/go-cmp v0.5.9/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeN
 github.com/kisielk/sqlstruct v0.0.0-20201105191214-5f3e10d3ab46/go.mod h1:yyMNCyc/Ib3bDTKd379tNMpB/7/H5TjM2Y9QJ5THLbE=
 github.com/michaelc445/proto v0.0.0-20240118234031-e5a0c2c71768 h1:Dv70JS/0aKOwrqUShO3+oD+rsy9SP+M65tBqEkMFBo8=
 github.com/michaelc445/proto v0.0.0-20240118234031-e5a0c2c71768/go.mod h1:nxgqxkY6w3PPGL4D/PJO1cSiBo1efaxrTW9mlnLdTrE=
+github.com/michaelc445/proto v0.0.0-20240131155717-35bdd9ee90d3 h1:w7zJaeTEaKaMB8br8gfZIrg3PmjxyJbh0AqPZa+n7qc=
+github.com/michaelc445/proto v0.0.0-20240131155717-35bdd9ee90d3/go.mod h1:g2zgo0cq+hZiqiNJ+C9GVJijqua19Crd+U8kJLEdpj0=
 golang.org/x/crypto v0.18.0 h1:PGVlW0xEltQnzFZ55hkuX5+KLyrMYhHld1YHO4AKcdc=
 golang.org/x/crypto v0.18.0/go.mod h1:R0j02AL6hcrfOiy9T4ZYp/rcWeMxM3L6QYxlOuEG1mg=
 golang.org/x/net v0.16.0 h1:7eBu7KsSvFDtSXUIDbh3aqlK4DPsZ1rByC8PFfBThos=
