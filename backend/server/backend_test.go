@@ -14,71 +14,78 @@ import (
 func TestRemovePoster(t *testing.T) {
 
 	tests := []struct {
-		name       string
-		userId     int32
-		partyId    int32
-		location   *pb.Location
-		posterId   int32
-		wantErr    bool
-		returnRows *sqlmock.Rows
-		wantCode   pb.ResponseCode
+		name         string
+		userId       int32
+		partyId      int32
+		location     *pb.Location
+		posterId     int32
+		wantPosterId int32
+		wantErr      bool
+		returnRows   *sqlmock.Rows
+		wantCode     pb.ResponseCode
 	}{
 		{
-			name:       "poster does not exist",
-			userId:     1,
-			partyId:    1,
-			location:   &pb.Location{Lat: 1.0, Lng: 1.0},
-			posterId:   1,
-			returnRows: sqlmock.NewRows([]string{"posterId", "distance"}),
-			wantCode:   pb.ResponseCode_FAILED,
-			wantErr:    true,
+			name:         "poster does not exist",
+			userId:       1,
+			partyId:      1,
+			location:     &pb.Location{Lat: 1.0, Lng: 1.0},
+			posterId:     1,
+			wantPosterId: 0,
+			returnRows:   sqlmock.NewRows([]string{"posterId", "distance"}),
+			wantCode:     pb.ResponseCode_FAILED,
+			wantErr:      true,
 		},
 		{
-			name:       "poster does not belong to party",
-			userId:     1,
-			partyId:    1,
-			location:   &pb.Location{Lat: 1, Lng: 1},
-			posterId:   1,
-			returnRows: sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(2, 1),
-			wantCode:   pb.ResponseCode_FAILED,
-			wantErr:    true,
+			name:         "poster does not belong to party",
+			userId:       1,
+			partyId:      1,
+			location:     &pb.Location{Lat: 1, Lng: 1},
+			posterId:     1,
+			wantPosterId: 0,
+			returnRows:   sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(2, 1),
+			wantCode:     pb.ResponseCode_FAILED,
+			wantErr:      true,
 		},
 		{
-			name:       "userId not set",
-			partyId:    1,
-			location:   &pb.Location{Lat: 1, Lng: 1},
-			posterId:   1,
-			returnRows: sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(1, 1),
-			wantErr:    true,
-			wantCode:   pb.ResponseCode_FAILED,
+			name:         "userId not set",
+			partyId:      1,
+			location:     &pb.Location{Lat: 1, Lng: 1},
+			posterId:     1,
+			wantPosterId: 0,
+			returnRows:   sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(1, 1),
+			wantErr:      true,
+			wantCode:     pb.ResponseCode_FAILED,
 		},
 		{
-			name:       "partyId not set",
-			userId:     1,
-			location:   &pb.Location{Lat: 1, Lng: 1},
-			posterId:   1,
-			returnRows: sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(1, 1),
-			wantErr:    true,
-			wantCode:   pb.ResponseCode_FAILED,
+			name:         "partyId not set",
+			userId:       1,
+			location:     &pb.Location{Lat: 1, Lng: 1},
+			posterId:     1,
+			wantPosterId: 0,
+			returnRows:   sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(1, 1),
+			wantErr:      true,
+			wantCode:     pb.ResponseCode_FAILED,
 		},
 		{
-			name:       "location not set",
-			userId:     1,
-			partyId:    1,
-			posterId:   1,
-			returnRows: sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(1, 1),
-			wantErr:    true,
-			wantCode:   pb.ResponseCode_FAILED,
+			name:         "location not set",
+			userId:       1,
+			partyId:      1,
+			posterId:     1,
+			wantPosterId: 0,
+			returnRows:   sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(1, 1),
+			wantErr:      true,
+			wantCode:     pb.ResponseCode_FAILED,
 		},
 		{
-			name:       "success",
-			userId:     1,
-			partyId:    1,
-			location:   &pb.Location{Lat: 1, Lng: 1},
-			posterId:   1,
-			returnRows: sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(1, 1),
-			wantErr:    false,
-			wantCode:   pb.ResponseCode_OK,
+			name:         "success",
+			userId:       1,
+			partyId:      1,
+			location:     &pb.Location{Lat: 1, Lng: 1},
+			posterId:     1,
+			wantPosterId: 1,
+			returnRows:   sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(1, 1),
+			wantErr:      false,
+			wantCode:     pb.ResponseCode_OK,
 		},
 	}
 
@@ -103,6 +110,9 @@ func TestRemovePoster(t *testing.T) {
 
 			if res.Code != tc.wantCode {
 				t.Fatalf("got code %v want code %v", res.Code, tc.wantCode)
+			}
+			if res.Posterid != tc.wantPosterId {
+				t.Fatalf("got posterid %v want posterid %v", res.Posterid, tc.wantPosterId)
 			}
 		})
 	}
