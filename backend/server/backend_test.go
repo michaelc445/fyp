@@ -98,8 +98,8 @@ func TestRemovePoster(t *testing.T) {
 
 			}
 			server := &server{DB: db}
-			mock.ExpectQuery("select").WithArgs(tc.location.GetLat(), tc.location.GetLng(), removePosterMaxDistance).WillReturnRows(tc.returnRows)
-			mock.ExpectExec("DELETE").WithArgs(tc.posterId, tc.partyId).WillReturnResult(sqlmock.NewResult(0, 0))
+			mock.ExpectQuery("select").WithArgs(tc.location.GetLat(), tc.location.GetLng(), tc.partyId, removePosterMaxDistance).WillReturnRows(tc.returnRows)
+			mock.ExpectExec("update").WithArgs(tc.posterId, tc.partyId).WillReturnResult(sqlmock.NewResult(0, 0))
 
 			res, err := server.RemovePoster(ctx, &pb.RemovePosterRequest{UserId: tc.userId, PartyId: tc.partyId, Location: tc.location})
 

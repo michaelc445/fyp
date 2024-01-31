@@ -24,7 +24,7 @@ var (
 	port                    = flag.Int("port", 50051, "The server port")
 	placePosterQuery        = "insert into fyp_schema.posters (partyId, userId, created,updated,location) values (?,?,NOW(),NOW(),point(?,?))"
 	checkPosterQuery        = "select partyId, posterId from fyp_schema.posters where posterId = ?"
-	removePosterQuery       = "DELETE from fyp_schema.posters where posterId = ? and partyId = ?"
+	removePosterQuery       = "update fyp_schema.posters set removed = now() where posterID = ? and partyID = ?;"
 	registerAccountQuery    = "insert into fyp_schema.users (partyId, username, pwhash) values (1,?,?)"
 	accountExistsQuery      = "select username, userId from fyp_schema.users where username = ?"
 	addUserinfoQuery        = "insert into fyp_schema.userinfo (userID, firstName, lastName,location) values (?,?,?,null)"
@@ -87,7 +87,7 @@ func (s *server) RemovePoster(ctx context.Context, in *pb.RemovePosterRequest) (
 	// find poster belonging to party that is closest to location
 	location := in.GetLocation()
 
-	res, err := s.DB.Query(posterDistanceQuery, location.GetLat(), location.GetLng(), removePosterMaxDistance)
+	res, err := s.DB.Query(posterDistanceQuery, location.GetLat(), location.GetLng(), in.GetPartyId(), removePosterMaxDistance)
 	if err != nil {
 		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query posters %v", err)
 	}
