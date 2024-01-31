@@ -29,17 +29,13 @@ var (
 	accountExistsQuery      = "select username, userId from fyp_schema.users where username = ?"
 	addUserinfoQuery        = "insert into fyp_schema.userinfo (userID, firstName, lastName,location) values (?,?,?,null)"
 	posterDistanceQuery     = "select posterID, ST_Distance_Sphere(location, point(?,?)) as distance from fyp_schema.posters where partyID = ? and removed is null having distance < ? order by distance asc limit 1;"
+	userInfoQuery           = "select users.userID,users.partyID,users.username,users.pwhash,parties.partyName from fyp_schema.users join fyp_schema.parties on users.partyID = parties.partyID where users.username = ?"
 )
 
 type server struct {
 	pb.UnimplementedPosterAppServer
 	DB *sql.DB
 }
-type Result struct {
-	PosterId int32
-	PartyId  int32
-}
-
 type Account struct {
 	Username  string
 	UserId    int
@@ -52,6 +48,12 @@ type Poster struct {
 	distance float64
 }
 
+func verifyClaims(claims *tokenService.UserClaims, userId int32, partyId int32) bool {
+	if claims.UserID != userId || claims.PartyId != partyId {
+		return false
+	}
+	return true
+}
 func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.PlacementResponse, error) {
 	if in.GetLocation() == nil {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("Location of poster not set")
@@ -61,6 +63,17 @@ func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.
 	}
 	if in.GetPartyId() == 0 {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("posterId not set")
+	}
+	if in.GetAuthKey() == "" {
+		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey not set")
+	}
+	// verify authkey
+	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
+	if userClaims == nil || userClaims.Valid() != nil {
+		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey is invalid. please login again")
+	}
+	if !verifyClaims(userClaims, in.GetUserId(), in.GetPartyId()) {
+		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authkey does not match supplied data")
 	}
 	res, err := s.DB.Exec(placePosterQuery, in.GetPartyId(), in.GetUserId(), in.GetLocation().Lat, in.GetLocation().Lng)
 	if err != nil {
@@ -82,6 +95,17 @@ func (s *server) RemovePoster(ctx context.Context, in *pb.RemovePosterRequest) (
 	}
 	if in.GetPartyId() == 0 {
 		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("partyId not set")
+	}
+	if in.GetAuthKey() == "" {
+		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey not set")
+	}
+	// verify authkey
+	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
+	if userClaims == nil || userClaims.Valid() != nil {
+		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey is invalid. please login again")
+	}
+	if !verifyClaims(userClaims, in.GetUserId(), in.GetPartyId()) {
+		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authkey does not match supplied data")
 	}
 
 	// find poster belonging to party that is closest to location
@@ -162,7 +186,7 @@ func (s *server) LoginAccount(ctx context.Context, in *pb.LoginRequest) (*pb.Log
 		return &pb.LoginResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("password not supplied")
 	}
 
-	res, err := s.DB.Query("select users.userID,users.partyID,users.username,users.pwhash,parties.partyName from fyp_schema.users join fyp_schema.parties on users.partyID = parties.partyID where users.username = ?", in.GetUsername())
+	res, err := s.DB.Query(userInfoQuery, in.GetUsername())
 	if err != nil {
 		return &pb.LoginResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query database for username %v. err: %v", in.GetUsername(), err)
 	}
@@ -182,8 +206,9 @@ func (s *server) LoginAccount(ctx context.Context, in *pb.LoginRequest) (*pb.Log
 
 	// generate JWT here and send back in authkey field
 	claims := tokenService.UserClaims{
-		UserID:   result.UserId,
+		UserID:   int32(result.UserId),
 		Username: result.Username,
+		PartyId:  int32(result.PartyId),
 		StandardClaims: jwt.StandardClaims{
 			IssuedAt:  time.Now().Unix(),
 			ExpiresAt: time.Now().Add(time.Hour * 48).Unix(),

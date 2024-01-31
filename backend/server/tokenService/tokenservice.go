@@ -8,8 +8,9 @@ import (
 )
 
 type UserClaims struct {
-	UserID   int    `json:"userid"`
+	UserID   int32  `json:"userid"`
 	Username string `json:"username"`
+	PartyId  int32  `json:"partyid"`
 	jwt.StandardClaims
 }
 
@@ -26,17 +27,21 @@ func NewRefreshToken(claims jwt.StandardClaims) (string, error) {
 }
 
 func ParseAccessToken(accessToken string) *UserClaims {
-	parsedAccessToken, _ := jwt.ParseWithClaims(accessToken, &UserClaims{}, func(token *jwt.Token) (interface{}, error) {
+	parsedAccessToken, err := jwt.ParseWithClaims(accessToken, &UserClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(os.Getenv("TOKEN_SECRET")), nil
 	})
-
+	if err != nil {
+		return nil
+	}
 	return parsedAccessToken.Claims.(*UserClaims)
 }
 
 func ParseRefreshToken(refreshToken string) *jwt.StandardClaims {
-	parsedRefreshToken, _ := jwt.ParseWithClaims(refreshToken, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
+	parsedRefreshToken, err := jwt.ParseWithClaims(refreshToken, &jwt.StandardClaims{}, func(token *jwt.Token) (interface{}, error) {
 		return []byte(os.Getenv("TOKEN_SECRET")), nil
 	})
-
+	if err != nil {
+		return nil
+	}
 	return parsedRefreshToken.Claims.(*jwt.StandardClaims)
 }

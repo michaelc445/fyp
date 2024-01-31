@@ -3,10 +3,12 @@ package main
 import (
 	"context"
 	"database/sql/driver"
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/golang-jwt/jwt"
+	"github.com/michaelc445/fyp/tokenService"
 	"log"
 	"testing"
-
-	"github.com/DATA-DOG/go-sqlmock"
+	"time"
 
 	pb "github.com/michaelc445/proto"
 )
@@ -18,6 +20,7 @@ func TestRemovePoster(t *testing.T) {
 		partyId      int32
 		location     *pb.Location
 		posterId     int32
+		userClaims   *tokenService.UserClaims
 		wantPosterId int32
 		wantErr      bool
 		returnRows   *sqlmock.Rows
@@ -101,7 +104,20 @@ func TestRemovePoster(t *testing.T) {
 			mock.ExpectQuery("select").WithArgs(tc.location.GetLat(), tc.location.GetLng(), tc.partyId, removePosterMaxDistance).WillReturnRows(tc.returnRows)
 			mock.ExpectExec("update").WithArgs(tc.posterId, tc.partyId).WillReturnResult(sqlmock.NewResult(0, 0))
 
-			res, err := server.RemovePoster(ctx, &pb.RemovePosterRequest{UserId: tc.userId, PartyId: tc.partyId, Location: tc.location})
+			userClaims := tokenService.UserClaims{
+				UserID:   tc.userId,
+				Username: "test",
+				PartyId:  tc.partyId,
+				StandardClaims: jwt.StandardClaims{
+					IssuedAt:  time.Now().Unix(),
+					ExpiresAt: time.Now().Add(time.Hour * 48).Unix(),
+				},
+			}
+			authKey, err := tokenService.NewAccessToken(userClaims)
+			if err != nil {
+				t.Fatalf("failed to create jwt: %v", err)
+			}
+			res, err := server.RemovePoster(ctx, &pb.RemovePosterRequest{UserId: tc.userId, PartyId: tc.partyId, Location: tc.location, AuthKey: authKey})
 
 			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
 				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
@@ -174,7 +190,21 @@ func TestPlacePoster(t *testing.T) {
 			server := &server{DB: db}
 			mock.ExpectExec("insert").WithArgs(tc.partyId, tc.userId, tc.location.GetLat(), tc.location.GetLng()).WillReturnResult(tc.returnResult)
 
-			res, err := server.PlacePoster(ctx, &pb.PlacementRequest{UserId: tc.userId, PartyId: tc.partyId, Location: tc.location})
+			userClaims := tokenService.UserClaims{
+				UserID:   tc.userId,
+				Username: "test",
+				PartyId:  tc.partyId,
+				StandardClaims: jwt.StandardClaims{
+					IssuedAt:  time.Now().Unix(),
+					ExpiresAt: time.Now().Add(time.Hour * 48).Unix(),
+				},
+			}
+			authKey, err := tokenService.NewAccessToken(userClaims)
+			if err != nil {
+				t.Fatalf("failed to create jwt: %v", err)
+			}
+
+			res, err := server.PlacePoster(ctx, &pb.PlacementRequest{UserId: tc.userId, PartyId: tc.partyId, Location: tc.location, AuthKey: authKey})
 
 			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
 				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
