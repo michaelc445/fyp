@@ -108,7 +108,6 @@ func (s *server) RemovePoster(ctx context.Context, in *pb.RemovePosterRequest) (
 	if err != nil {
 		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to remove poster: %v", err)
 	}
-
 	return &pb.RemovePosterResponse{Code: pb.ResponseCode_OK, Posterid: poster.posterId}, nil
 }
 

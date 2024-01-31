@@ -12,7 +12,6 @@ import (
 )
 
 func TestRemovePoster(t *testing.T) {
-
 	tests := []struct {
 		name         string
 		userId       int32
