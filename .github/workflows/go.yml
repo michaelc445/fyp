@@ -17,7 +17,7 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: download proto
-      run: go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28; go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2; export PATH="$PATH:$(go env GOPATH)/bin"; chmod +x backend/compile.sh; ./backend/compile.sh
+      run: sudo apt install protobuf-compiler; go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28; go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2; export PATH="$PATH:$(go env GOPATH)/bin"; chmod +x backend/compile.sh; ./backend/compile.sh
       
     - name: Set up Go
       uses: actions/setup-go@v4
