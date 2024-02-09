@@ -1,0 +1,40 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Go
+
+on:
+  push:
+    branches: [ "master", "server-dev" ]
+  pull_request:
+    branches: [ "master", "server-dev" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Cache dependencies
+      uses: actions/cache@v2
+      with:
+        path: ${{ env.GOPATH }}/pkg/mod
+        key: go-dependencies-${{ runner.os }}-${{ hashFiles('go.sum') }}
+        restore-keys: go-dependencies-${{ runner.os }}-
+
+    - name: download proto
+      run: sudo apt install protobuf-compiler; go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28; go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2; export PATH="$PATH:$(go env GOPATH)/bin"; chmod +x backend/compile.sh; cd backend; ./compile.sh
+      
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21.6'
+
+
+
+    - name: Build
+      run: go build -C ./backend/server
+
+    - name: Test
+      run: go test -C ./backend/server
