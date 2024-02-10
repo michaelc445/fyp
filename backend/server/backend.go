@@ -4,10 +4,11 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/michaelc445/fyp/tokenService"
 	"log"
 	"net"
 	"time"
+
+	"github.com/michaelc445/fyp/tokenService"
 
 	"database/sql"
 
@@ -20,7 +21,7 @@ import (
 )
 
 var (
-	removePosterMaxDistance = 20
+	removePosterMaxDistance = 100
 	port                    = flag.Int("port", 50051, "The server port")
 	placePosterQuery        = "insert into fyp_schema.posters (partyId, userId, created,updated,location) values (?,?,NOW(),NOW(),point(?,?))"
 	checkPosterQuery        = "select partyId, posterId from fyp_schema.posters where posterId = ?"
@@ -56,7 +57,7 @@ func verifyClaims(claims *tokenService.UserClaims, userId int32, partyId int32) 
 }
 func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.PlacementResponse, error) {
 	if in.GetLocation() == nil {
-		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("Location of poster not set")
+		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("location of poster not set")
 	}
 	if in.GetUserId() == 0 {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("userId not set")
@@ -75,7 +76,7 @@ func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.
 	if !verifyClaims(userClaims, in.GetUserId(), in.GetPartyId()) {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authkey does not match supplied data")
 	}
-	res, err := s.DB.Exec(placePosterQuery, in.GetPartyId(), in.GetUserId(), in.GetLocation().Lat, in.GetLocation().Lng)
+	res, err := s.DB.Exec(placePosterQuery, in.GetPartyId(), in.GetUserId(), in.GetLocation().Lng, in.GetLocation().Lat)
 	if err != nil {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to insert poster to database: %v", err)
 	}
@@ -111,17 +112,17 @@ func (s *server) RemovePoster(ctx context.Context, in *pb.RemovePosterRequest) (
 	// find poster belonging to party that is closest to location
 	location := in.GetLocation()
 
-	res, err := s.DB.Query(posterDistanceQuery, location.GetLat(), location.GetLng(), in.GetPartyId(), removePosterMaxDistance)
+	res, err := s.DB.Query(posterDistanceQuery, location.GetLng(), location.GetLat(), in.GetPartyId(), removePosterMaxDistance)
 	if err != nil {
 		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query posters %v", err)
 	}
-	defer res.Close()
 
 	// check that there was a row returned
 
 	if !res.Next() {
 		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("no posters found within %d meters", removePosterMaxDistance)
 	}
+	defer res.Close()
 	var poster Poster
 	err = res.Scan(&poster.posterId, &poster.distance)
 	if err != nil {
@@ -231,7 +232,7 @@ func hash(password string) (string, error) {
 }
 func main() {
 	flag.Parse()
-	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", *port))
+	lis, err := net.Listen("tcp", fmt.Sprintf("192.168.0.194:%d", *port))
 	if err != nil {
 		log.Fatalf("failed to listen: %v", err)
 	}
