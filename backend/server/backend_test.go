@@ -3,12 +3,13 @@ package main
 import (
 	"context"
 	"database/sql/driver"
-	"github.com/DATA-DOG/go-sqlmock"
-	"github.com/golang-jwt/jwt"
-	"github.com/michaelc445/fyp/tokenService"
 	"log"
 	"testing"
 	"time"
+
+	"github.com/DATA-DOG/go-sqlmock"
+	"github.com/golang-jwt/jwt"
+	"github.com/michaelc445/fyp/tokenService"
 
 	pb "github.com/michaelc445/proto"
 )
@@ -147,7 +148,7 @@ func TestPlacePoster(t *testing.T) {
 			name:         "userId not set",
 			partyId:      1,
 			location:     &pb.Location{Lat: 1, Lng: 2},
-			returnResult: sqlmock.NewResult(1, 2),
+			returnResult: sqlmock.NewResult(0, 0),
 			wantErr:      true,
 			wantCode:     pb.ResponseCode_FAILED,
 		},
@@ -155,7 +156,7 @@ func TestPlacePoster(t *testing.T) {
 			name:         "partyId not set",
 			userId:       1,
 			location:     &pb.Location{Lat: 1, Lng: 2},
-			returnResult: sqlmock.NewResult(1, 2),
+			returnResult: sqlmock.NewResult(0, 0),
 			wantErr:      true,
 			wantCode:     pb.ResponseCode_FAILED,
 		},
@@ -163,7 +164,7 @@ func TestPlacePoster(t *testing.T) {
 			name:         "Location not set",
 			userId:       1,
 			partyId:      1,
-			returnResult: sqlmock.NewResult(1, 2),
+			returnResult: sqlmock.NewResult(0, 0),
 			wantErr:      true,
 			wantCode:     pb.ResponseCode_FAILED,
 		},
@@ -188,7 +189,7 @@ func TestPlacePoster(t *testing.T) {
 
 			}
 			server := &server{DB: db}
-			mock.ExpectExec("insert").WithArgs(tc.partyId, tc.userId, tc.location.GetLat(), tc.location.GetLng()).WillReturnResult(tc.returnResult)
+			mock.ExpectExec("insert").WithArgs(tc.partyId, tc.userId, tc.location.GetLng(), tc.location.GetLat()).WillReturnResult(tc.returnResult)
 
 			userClaims := tokenService.UserClaims{
 				UserID:   tc.userId,
