@@ -69,6 +69,82 @@ func verifyClaims(claims *tokenService.UserClaims, userId int32, partyId int32) 
 	}
 	return true
 }
+func (s *server) RegisterParty(ctx context.Context, in *pb.RegisterPartyRequest) (*pb.RegisterPartyResponse, error) {
+	if in.PartyName == "" {
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("party name can not be empty")
+	}
+	if in.GetUserId() == 0 {
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("userID not set")
+	}
+	if in.GetAuthKey() == "" {
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("auth key not set")
+	}
+
+	// verify authkey
+	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
+	if userClaims == nil || userClaims.Valid() != nil {
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey is invalid. please login again")
+	}
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to start transaction %v", err)
+	}
+
+	// check if user is admin of a party (can't create new party if you are an admin of a party)
+	res, err := tx.Query("select * from fyp_schema.parties where partyID = ? and admin = ?", userClaims.PartyId, in.GetUserId())
+	if err != nil {
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to lookup users party: %v", err)
+	}
+	// there should be no rows returned
+	if res.Next() {
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("can't register new party while you are admin of a party")
+	}
+	// check if party exists
+	res, err = tx.Query("select * from fyp_schema.parties where partyName = ?", in.GetPartyName())
+	if err != nil {
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to search party database: %v", err)
+	}
+	// there should be no rows returned
+	if res.Next() {
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("party already exists")
+	}
+
+	// create new party with user as admin
+	rows, err := tx.Exec("insert into fyp_schema.parties (partyName, admin) values (?,?)", in.GetPartyName(), in.GetUserId())
+	if err != nil {
+		_ = tx.Rollback()
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to create new party %v", err)
+	}
+	partyId, err := rows.LastInsertId()
+	if err != nil {
+		_ = tx.Rollback()
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to create new party %v", err)
+	}
+
+	// change users party to the new party
+	rows, err = tx.Exec("update fyp_schema.users set partyID = ? where userID = ?", partyId, in.GetUserId())
+	if err != nil {
+		_ = tx.Rollback()
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed update users party %v", err)
+	}
+	numRows, err := rows.RowsAffected()
+	if err != nil {
+		_ = tx.Rollback()
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to check number of rows affected %v", err)
+	}
+	if numRows != 1 {
+		_ = tx.Rollback()
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to update users party")
+	}
+	userClaims.PartyId = int32(partyId)
+	authKey, err := tokenService.NewAccessToken(*userClaims)
+	if err != nil {
+		_ = tx.Rollback()
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to create new authKey %v", err)
+	}
+	_ = tx.Commit()
+	return &pb.RegisterPartyResponse{Code: pb.ResponseCode_OK, PartyId: int32(partyId), AuthKey: authKey}, nil
+}
 func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.PlacementResponse, error) {
 	if in.GetLocation() == nil {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("location of poster not set")

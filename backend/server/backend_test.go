@@ -17,6 +17,141 @@ import (
 	pb "github.com/michaelc445/proto"
 )
 
+func TestRegisterParty(t *testing.T) {
+	tests := []struct {
+		name              string
+		userId            int32
+		partyId           int32
+		newPartyId        int32
+		partyName         string
+		userAdminRows     *sqlmock.Rows
+		partyExistsRows   *sqlmock.Rows
+		updateUserResult  driver.Result
+		createPartyResult driver.Result
+		userClaims        *tokenService.UserClaims
+		wantErr           bool
+
+		wantCode pb.ResponseCode
+	}{
+		{
+			name:              "partyName not set",
+			userId:            1,
+			partyId:           1,
+			newPartyId:        2,
+			partyName:         "",
+			userAdminRows:     sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			partyExistsRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			updateUserResult:  sqlmock.NewResult(0, 1),
+			createPartyResult: sqlmock.NewResult(2, 1),
+			wantCode:          pb.ResponseCode_FAILED,
+			wantErr:           true,
+		},
+		{
+			name:              "userId not set",
+			userId:            0,
+			partyId:           1,
+			newPartyId:        2,
+			partyName:         "hello",
+			userAdminRows:     sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			partyExistsRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			updateUserResult:  sqlmock.NewResult(0, 1),
+			createPartyResult: sqlmock.NewResult(2, 1),
+			wantCode:          pb.ResponseCode_FAILED,
+			wantErr:           true,
+		},
+		{
+			name:              "user is admin  of party",
+			userId:            1,
+			partyId:           1,
+			newPartyId:        2,
+			partyName:         "new_party",
+			userAdminRows:     sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(2, "haha", 1),
+			partyExistsRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			updateUserResult:  sqlmock.NewResult(0, 0),
+			createPartyResult: sqlmock.NewResult(0, 0),
+			wantCode:          pb.ResponseCode_FAILED,
+			wantErr:           true,
+		},
+		{
+			name:              "party already exists",
+			userId:            1,
+			partyId:           1,
+			newPartyId:        2,
+			partyName:         "new_party",
+			userAdminRows:     sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			partyExistsRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(2, "haha", 1),
+			updateUserResult:  sqlmock.NewResult(0, 0),
+			createPartyResult: sqlmock.NewResult(0, 0),
+			wantCode:          pb.ResponseCode_FAILED,
+			wantErr:           true,
+		},
+		{
+			name:              "success",
+			userId:            2,
+			partyId:           1,
+			newPartyId:        2,
+			partyName:         "new party",
+			userAdminRows:     sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			partyExistsRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			updateUserResult:  sqlmock.NewResult(2, 1),
+			createPartyResult: sqlmock.NewResult(2, 1),
+			wantErr:           false,
+			wantCode:          pb.ResponseCode_OK,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, mock, err := sqlmock.New()
+			defer db.Close()
+			if err != nil {
+				t.Fatalf("an error occured while creating fake sql database %v", err)
+
+			}
+			server := &server{DB: db}
+			mock.ExpectBegin()
+
+			mock.ExpectQuery("select").WithArgs(tc.partyId, tc.userId).WillReturnRows(tc.userAdminRows)
+			mock.ExpectQuery("select").WithArgs(tc.partyName).WillReturnRows(tc.partyExistsRows)
+			mock.ExpectExec("insert").WithArgs(tc.partyName, tc.userId).WillReturnResult(tc.createPartyResult)
+			mock.ExpectExec("update").WithArgs(tc.newPartyId, tc.userId).WillReturnResult(tc.updateUserResult)
+
+			mock.ExpectCommit()
+			userClaims := tokenService.UserClaims{
+				UserID:   tc.userId,
+				Username: "test",
+				PartyId:  tc.partyId,
+				StandardClaims: jwt.StandardClaims{
+					IssuedAt:  time.Now().Unix(),
+					ExpiresAt: time.Now().Add(time.Hour * 48).Unix(),
+				},
+			}
+			authKey, err := tokenService.NewAccessToken(userClaims)
+			if err != nil {
+				t.Fatalf("failed to create jwt: %v", err)
+			}
+			res, err := server.RegisterParty(ctx, &pb.RegisterPartyRequest{UserId: tc.userId, AuthKey: authKey, PartyName: tc.partyName})
+
+			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
+				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
+			}
+
+			if res.Code != tc.wantCode {
+				t.Fatalf("got code %v want code %v", res.Code, tc.wantCode)
+			}
+			authKey = res.GetAuthKey()
+			if authKey != "" {
+				newClaims := tokenService.ParseAccessToken(authKey)
+				if newClaims.PartyId != tc.newPartyId {
+					t.Fatalf("expected partyid: %v got partyID: %v", tc.newPartyId, newClaims.PartyId)
+				}
+			}
+
+		})
+	}
+}
+
 func TestRemovePoster(t *testing.T) {
 	tests := []struct {
 		name         string
