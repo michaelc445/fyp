@@ -446,9 +446,13 @@ func TestRegisterAccount(t *testing.T) {
 
 			}
 			server := &server{DB: db}
+			mock.ExpectBegin()
+
 			mock.ExpectQuery("select").WithArgs(tc.username).WillReturnRows(tc.accountExistsResult)
 			mock.ExpectExec("insert").WithArgs(tc.username, sqlmock.AnyArg()).WillReturnResult(sqlmock.NewResult(1, 2))
 			mock.ExpectExec("insert").WithArgs(1, tc.firstName, tc.lastName).WillReturnResult(sqlmock.NewResult(1, 2))
+
+			mock.ExpectCommit()
 			res, err := server.RegisterAccount(ctx,
 				&pb.RegisterAccountRequest{
 					Username:  tc.username,

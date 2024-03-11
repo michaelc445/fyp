@@ -241,33 +241,44 @@ func (s *server) RegisterAccount(ctx context.Context, in *pb.RegisterAccountRequ
 	if in.GetPassword() == "" {
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("password can't be empty")
 	}
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
+	if err != nil {
+		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to start transaction %v", err)
+	}
 	// check does the username already exist
-	res, err := s.DB.Query(accountExistsQuery, in.GetUsername())
+	res, err := tx.Query(accountExistsQuery, in.GetUsername())
 	defer res.Close()
 	if err != nil {
+		_ = tx.Rollback()
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query username from database: %v", err)
 	}
 	if res.Next() {
+		_ = tx.Rollback()
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("username already exists")
 	}
 	pwhash, err := hash(in.GetPassword())
 	if err != nil {
+		_ = tx.Rollback()
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to create password hash: %v", err)
 	}
 	// add acount to users table
-	addAccountRes, err := s.DB.Exec(registerAccountQuery, in.GetUsername(), pwhash)
+	addAccountRes, err := tx.Exec(registerAccountQuery, in.GetUsername(), pwhash)
 	if err != nil {
+		_ = tx.Rollback()
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to add account to database: %v", err)
 	}
 	userId, err := addAccountRes.LastInsertId()
 	if err != nil {
+		_ = tx.Rollback()
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to read userid from database: %v", err)
 	}
 	// add account to userinfo table
-	_, err = s.DB.Exec(addUserinfoQuery, userId, in.GetFirstName(), in.GetLastName())
+	_, err = tx.Exec(addUserinfoQuery, userId, in.GetFirstName(), in.GetLastName())
 	if err != nil {
+		_ = tx.Rollback()
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to add account to userinfo database: %v", err)
 	}
+	_ = tx.Commit()
 	return &pb.RegisterAccountResponse{Code: pb.ResponseCode_OK}, nil
 }
 
