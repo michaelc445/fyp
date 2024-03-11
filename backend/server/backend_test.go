@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"database/sql/driver"
+	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/ptypes/timestamp"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"testing"
 	"time"
@@ -400,6 +403,113 @@ func TestLoginAccount(t *testing.T) {
 
 			if res.Code != tc.wantCode {
 				t.Fatalf("got code %v want code %v", res.Code, tc.wantCode)
+			}
+		})
+	}
+}
+
+func Test_RetrieveUpdates(t *testing.T) {
+
+	tests := []struct {
+		name         string
+		userId       int32
+		partyId      int32
+		lastUpdated  *timestamp.Timestamp
+		wantErr      bool
+		returnRows   *sqlmock.Rows
+		wantCode     pb.ResponseCode
+		wantResponse *pb.UpdateResponse
+	}{
+		{
+			name:         "userId not set",
+			partyId:      1,
+			returnRows:   sqlmock.NewRows([]string{"posterID", "partyId", "userID", "removed", "latitude", "longitude"}),
+			lastUpdated:  timestamppb.New(time.Date(2000, 1, 1, 1, 1, 1, 1, time.UTC)),
+			wantErr:      true,
+			wantCode:     pb.ResponseCode_FAILED,
+			wantResponse: &pb.UpdateResponse{Code: pb.ResponseCode_FAILED},
+		},
+		{
+			name:         "partyId not set",
+			userId:       1,
+			returnRows:   sqlmock.NewRows([]string{"posterID", "partyId", "userID", "removed", "latitude", "longitude"}),
+			lastUpdated:  timestamppb.New(time.Date(2000, 1, 1, 1, 1, 1, 1, time.UTC)),
+			wantErr:      true,
+			wantCode:     pb.ResponseCode_FAILED,
+			wantResponse: &pb.UpdateResponse{Code: pb.ResponseCode_FAILED},
+		},
+		{
+			name:         "lastUpdated  not set",
+			userId:       1,
+			partyId:      1,
+			returnRows:   sqlmock.NewRows([]string{"posterID", "partyId", "userID", "removed", "latitude", "longitude"}),
+			wantErr:      true,
+			wantCode:     pb.ResponseCode_FAILED,
+			wantResponse: &pb.UpdateResponse{Code: pb.ResponseCode_FAILED},
+		},
+		{
+			name:    "success",
+			userId:  1,
+			partyId: 1,
+			returnRows: sqlmock.NewRows([]string{"posterID", "partyId", "userID", "removed", "latitude", "longitude"}).
+				AddRow(1, 1, 1, nil, 1, 1).
+				AddRow(2, 1, 1, nil, 2, 1),
+
+			lastUpdated: timestamppb.New(time.Date(2000, 1, 1, 1, 1, 1, 1, time.UTC)),
+			wantErr:     false,
+
+			wantCode: pb.ResponseCode_OK,
+			wantResponse: &pb.UpdateResponse{Code: pb.ResponseCode_OK, Posters: []*pb.Poster{
+				{
+					PlacedBy: 1,
+					Party:    1,
+					Posterid: 1,
+					Location: &pb.Location{Lat: 1, Lng: 1},
+				},
+				{
+					PlacedBy: 1,
+					Party:    1,
+					Posterid: 2,
+					Location: &pb.Location{Lat: 2, Lng: 1},
+				},
+			}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, mock, err := sqlmock.New()
+			defer db.Close()
+			if err != nil {
+				t.Fatalf("an error occured while creating fake sql database %v", err)
+
+			}
+			server := &server{DB: db}
+
+			mock.ExpectQuery("select").WithArgs(tc.partyId, tc.lastUpdated.AsTime().Unix()).WillReturnRows(tc.returnRows)
+
+			userClaims := tokenService.UserClaims{
+				UserID:   tc.userId,
+				Username: "test",
+				PartyId:  tc.partyId,
+				StandardClaims: jwt.StandardClaims{
+					IssuedAt:  time.Now().Unix(),
+					ExpiresAt: time.Now().Add(time.Hour * 48).Unix(),
+				},
+			}
+			authKey, err := tokenService.NewAccessToken(userClaims)
+			if err != nil {
+				t.Fatalf("failed to create jwt: %v", err)
+			}
+
+			res, err := server.RetrieveUpdates(ctx, &pb.UpdateRequest{Partyid: tc.partyId, UserId: tc.userId, AuthKey: authKey, LastUpdated: tc.lastUpdated})
+
+			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
+				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
+			}
+			if !proto.Equal(res, tc.wantResponse) {
+				t.Fatalf("got response %v want response %v", res, tc.wantResponse)
 			}
 		})
 	}

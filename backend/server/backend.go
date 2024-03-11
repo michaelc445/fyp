@@ -8,6 +8,8 @@ import (
 	"net"
 	"time"
 
+	"github.com/golang/protobuf/ptypes/timestamp"
+
 	"github.com/michaelc445/fyp/tokenService"
 
 	"database/sql"
@@ -48,6 +50,18 @@ type Poster struct {
 	posterId int32
 	distance float64
 }
+type Location struct {
+	Lat float64
+	Lng float64
+}
+type PosterUpdate struct {
+	PosterId int32
+	PartyId  int32
+	UserID   int32
+
+	Removed  timestamp.Timestamp
+	location pb.Location
+}
 
 func verifyClaims(claims *tokenService.UserClaims, userId int32, partyId int32) bool {
 	if claims.UserID != userId || claims.PartyId != partyId {
@@ -68,6 +82,7 @@ func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.
 	if in.GetAuthKey() == "" {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey not set")
 	}
+
 	// verify authkey
 	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
 	if userClaims == nil || userClaims.Valid() != nil {
@@ -84,6 +99,7 @@ func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.
 	if err != nil {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to get posterId from query: %v", err)
 	}
+
 	return &pb.PlacementResponse{Code: pb.ResponseCode_OK, PosterId: int32(id)}, nil
 }
 
@@ -221,6 +237,51 @@ func (s *server) LoginAccount(ctx context.Context, in *pb.LoginRequest) (*pb.Log
 	}
 
 	return &pb.LoginResponse{AuthKey: accessToken, Code: pb.ResponseCode_OK, Party: result.PartyName, UserId: int32(result.UserId), PartyId: int32(result.PartyId)}, nil
+}
+
+func (s *server) RetrieveUpdates(ctx context.Context, in *pb.UpdateRequest) (*pb.UpdateResponse, error) {
+	if in.GetAuthKey() == "" {
+		return &pb.UpdateResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("no authkey provided")
+	}
+	if in.GetUserId() == 0 {
+		return &pb.UpdateResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("no userId provided")
+	}
+	if in.GetPartyid() == 0 {
+		return &pb.UpdateResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("no partyId provided")
+	}
+	if in.GetLastUpdated() == nil {
+		return &pb.UpdateResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("no lastUpdated provided")
+	}
+	// verify authkey
+	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
+	if userClaims == nil || userClaims.Valid() != nil {
+		return &pb.UpdateResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey is invalid. please login again")
+	}
+	if !verifyClaims(userClaims, in.GetUserId(), in.GetPartyid()) {
+		return &pb.UpdateResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authkey does not match supplied data")
+	}
+
+	rows, err := s.DB.Query("select posterID, partyId, userID, removed, st_y(location) as latitude, st_x(location) as longitude from fyp_schema.posters where partyId = ? and updated > from_unixtime(?)", in.Partyid, in.LastUpdated.AsTime().Unix())
+	if err != nil {
+		return &pb.UpdateResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query database for posters %v", err)
+	}
+	defer rows.Close()
+	var posters []*pb.Poster
+	for rows.Next() {
+		var poster PosterUpdate
+		removed := []uint8{}
+		t := false
+		err = rows.Scan(&poster.PosterId, &poster.PartyId, &poster.UserID, &removed, &poster.location.Lat, &poster.location.Lng)
+		if err != nil {
+			return &pb.UpdateResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to get updates %v", err)
+		}
+		if removed != nil {
+			t = true
+		}
+		posters = append(posters, &pb.Poster{PlacedBy: poster.UserID, Party: poster.PartyId, Posterid: poster.PosterId, Location: &poster.location, Removed: t})
+	}
+
+	return &pb.UpdateResponse{Posters: posters, Code: pb.ResponseCode_OK}, nil
 }
 
 func hash(password string) (string, error) {
