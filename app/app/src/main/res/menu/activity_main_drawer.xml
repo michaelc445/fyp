@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:showIn="navigation_view">
+
+    <group android:checkableBehavior="single">
+        <item
+            android:id="@+id/nav_profile"
+            android:icon="@android:drawable/btn_star_big_on"
+            android:title="Profile" />
+        <item
+            android:id="@+id/nav_placePoster"
+            android:icon="@android:drawable/checkbox_on_background"
+            android:title="Place Posters" />
+        <item
+            android:id="@+id/nav_RemovePoster"
+            android:icon="@android:drawable/btn_dialog"
+            android:title="Remove Posters" />
+    </group>
+</menu>
