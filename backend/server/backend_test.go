@@ -17,6 +17,146 @@ import (
 	pb "github.com/michaelc445/proto"
 )
 
+func TestApproveMembers(t *testing.T) {
+	tests := []struct {
+		name            string
+		userId          int32
+		partyId         int32
+		approvedMembers []*pb.Member
+		deniedMembers   []*pb.Member
+		adminRows       *sqlmock.Rows
+		wantErr         bool
+		wantCode        pb.ResponseCode
+	}{
+		{
+			name:      "userId not set",
+			userId:    0,
+			partyId:   1,
+			wantCode:  pb.ResponseCode_FAILED,
+			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 0),
+			wantErr:   true,
+		},
+		{
+			name:      "partyId not set",
+			userId:    1,
+			partyId:   0,
+			wantCode:  pb.ResponseCode_FAILED,
+			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			wantErr:   true,
+		},
+		{
+			name:      "user is not admin of party",
+			userId:    1,
+			partyId:   1,
+			wantCode:  pb.ResponseCode_FAILED,
+			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			wantErr:   true,
+		},
+		{
+			name:      "approve members",
+			userId:    1,
+			partyId:   1,
+			wantCode:  pb.ResponseCode_OK,
+			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			approvedMembers: []*pb.Member{
+				{UserId: 2, FirstName: "john", LastName: "murphy"},
+				{UserId: 3, FirstName: "jack", LastName: "sparrow"},
+				{UserId: 4, FirstName: "forrest", LastName: "gump"},
+			},
+			wantErr: false,
+		},
+		{
+			name:      "deny members",
+			userId:    1,
+			partyId:   1,
+			wantCode:  pb.ResponseCode_OK,
+			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			deniedMembers: []*pb.Member{
+				{UserId: 2, FirstName: "john", LastName: "murphy"},
+				{UserId: 3, FirstName: "jack", LastName: "sparrow"},
+				{UserId: 4, FirstName: "forrest", LastName: "gump"},
+			},
+			wantErr: false,
+		},
+		{
+			name:      "approve and deny members",
+			userId:    2,
+			partyId:   1,
+			wantCode:  pb.ResponseCode_OK,
+			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			approvedMembers: []*pb.Member{
+				{UserId: 2, FirstName: "john", LastName: "murphy"},
+				{UserId: 3, FirstName: "jack", LastName: "sparrow"},
+				{UserId: 4, FirstName: "forrest", LastName: "gump"},
+			},
+			deniedMembers: []*pb.Member{
+				{UserId: 5, FirstName: "murphy", LastName: "john"},
+				{UserId: 6, FirstName: "sparrow", LastName: "jack"},
+				{UserId: 7, FirstName: "gump", LastName: "forrest"},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, mock, err := sqlmock.New()
+			defer db.Close()
+			if err != nil {
+				t.Fatalf("an error occured while creating fake sql database %v", err)
+
+			}
+			server := &server{DB: db}
+			mock.ExpectBegin()
+
+			mock.ExpectQuery("select").WithArgs(tc.partyId, tc.userId).WillReturnRows(tc.adminRows)
+
+			for _, member := range tc.approvedMembers {
+				mock.ExpectQuery("select").
+					WithArgs(member.GetUserId(), tc.partyId).
+					WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+				mock.ExpectExec("update").WithArgs(tc.partyId, member.GetUserId()).WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectExec("update").WithArgs(member.GetUserId(), tc.partyId).WillReturnResult(sqlmock.NewResult(1, 1))
+			}
+
+			for _, member := range tc.deniedMembers {
+				mock.ExpectExec("update").WithArgs(member.GetUserId(), tc.partyId).WillReturnResult(sqlmock.NewResult(1, 1))
+			}
+			mock.ExpectCommit()
+			userClaims := tokenService.UserClaims{
+				UserID:   tc.userId,
+				Username: "test",
+				PartyId:  tc.partyId,
+				StandardClaims: jwt.StandardClaims{
+					IssuedAt:  time.Now().Unix(),
+					ExpiresAt: time.Now().Add(time.Hour * 48).Unix(),
+				},
+			}
+			authKey, err := tokenService.NewAccessToken(userClaims)
+			if err != nil {
+				t.Fatalf("failed to create jwt: %v", err)
+			}
+			res, err := server.ApproveMembers(ctx, &pb.ApproveMemberRequest{
+				UserId:          tc.userId,
+				AuthKey:         authKey,
+				PartyId:         tc.partyId,
+				ApprovedMembers: tc.approvedMembers,
+				DeniedMembers:   tc.deniedMembers,
+			})
+
+			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
+				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
+			}
+
+			if tc.wantCode != res.Code {
+				t.Fatalf("got response code: %v want response code: %v", res.GetCode(), tc.wantCode)
+			}
+
+		})
+	}
+}
+
 func TestRetrieveJoinRequests(t *testing.T) {
 	tests := []struct {
 		name            string
