@@ -17,6 +17,115 @@ import (
 	pb "github.com/michaelc445/proto"
 )
 
+func TestRetrieveJoinRequests(t *testing.T) {
+	tests := []struct {
+		name            string
+		userId          int32
+		partyId         int32
+		userAdminRows   *sqlmock.Rows
+		joinRequestRows *sqlmock.Rows
+		wantErr         bool
+		wantRes         *pb.RetrieveJoinResponse
+	}{
+		{
+			name:            "userId not set",
+			userId:          0,
+			partyId:         1,
+			userAdminRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			joinRequestRows: sqlmock.NewRows([]string{"userID", "firstName", "lastName"}),
+			wantRes:         &pb.RetrieveJoinResponse{Code: pb.ResponseCode_FAILED},
+			wantErr:         true,
+		},
+		{
+			name:            "partyId not set",
+			userId:          1,
+			partyId:         0,
+			userAdminRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			joinRequestRows: sqlmock.NewRows([]string{"userID", "firstName", "lastName"}),
+			wantRes:         &pb.RetrieveJoinResponse{Code: pb.ResponseCode_FAILED},
+			wantErr:         true,
+		},
+		{
+			name:            "user is not admin of party",
+			userId:          1,
+			partyId:         1,
+			userAdminRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			joinRequestRows: sqlmock.NewRows([]string{"userID", "firstName", "lastName"}),
+			wantRes:         &pb.RetrieveJoinResponse{Code: pb.ResponseCode_FAILED},
+			wantErr:         true,
+		},
+		{
+			name:            "no join requests",
+			userId:          1,
+			partyId:         1,
+			userAdminRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			joinRequestRows: sqlmock.NewRows([]string{"userID", "firstName", "lastName"}),
+			wantRes:         &pb.RetrieveJoinResponse{Code: pb.ResponseCode_OK, Members: []*pb.Member{}},
+			wantErr:         false,
+		},
+		{
+			name:          "success",
+			userId:        2,
+			partyId:       1,
+			userAdminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			joinRequestRows: sqlmock.NewRows([]string{"userID", "firstName", "lastName"}).
+				AddRow(2, "john", "murphy").
+				AddRow(3, "jack", "sparrow").
+				AddRow(4, "forrest", "gump"),
+
+			wantRes: &pb.RetrieveJoinResponse{
+				Code: pb.ResponseCode_OK,
+				Members: []*pb.Member{
+					{UserId: 2, FirstName: "john", LastName: "murphy"},
+					{UserId: 3, FirstName: "jack", LastName: "sparrow"},
+					{UserId: 4, FirstName: "forrest", LastName: "gump"},
+				},
+			},
+			wantErr: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, mock, err := sqlmock.New()
+			defer db.Close()
+			if err != nil {
+				t.Fatalf("an error occured while creating fake sql database %v", err)
+
+			}
+			server := &server{DB: db}
+
+			mock.ExpectQuery("select").WithArgs(tc.partyId, tc.userId).WillReturnRows(tc.userAdminRows)
+			mock.ExpectQuery("select").WithArgs(tc.partyId).WillReturnRows(tc.joinRequestRows)
+
+			userClaims := tokenService.UserClaims{
+				UserID:   tc.userId,
+				Username: "test",
+				PartyId:  tc.partyId,
+				StandardClaims: jwt.StandardClaims{
+					IssuedAt:  time.Now().Unix(),
+					ExpiresAt: time.Now().Add(time.Hour * 48).Unix(),
+				},
+			}
+			authKey, err := tokenService.NewAccessToken(userClaims)
+			if err != nil {
+				t.Fatalf("failed to create jwt: %v", err)
+			}
+			res, err := server.RetrieveJoinRequests(ctx, &pb.RetrieveJoinRequest{UserId: tc.userId, AuthKey: authKey, PartyId: tc.partyId})
+
+			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
+				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
+			}
+
+			if !proto.Equal(res, tc.wantRes) {
+				t.Fatalf("got response %v want response %v", res, tc.wantRes)
+			}
+
+		})
+	}
+}
+
 func TestJoinParty(t *testing.T) {
 	tests := []struct {
 		name                  string

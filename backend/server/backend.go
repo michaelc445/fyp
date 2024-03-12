@@ -33,6 +33,7 @@ var (
 	addUserinfoQuery        = "insert into fyp_schema.userinfo (userID, firstName, lastName,location) values (?,?,?,null)"
 	posterDistanceQuery     = "select posterID, ST_Distance_Sphere(location, point(?,?)) as distance from fyp_schema.posters where partyID = ? and removed is null having distance < ? order by distance asc limit 1;"
 	userInfoQuery           = "select users.userID,users.partyID,users.username,users.pwhash,parties.partyName from fyp_schema.users join fyp_schema.parties on users.partyID = parties.partyID where users.username = ?"
+	joinRequestQuery        = "select t1.userid, t2.firstName, t2.lastname from fyp_schema.joinRequests as t1 join fyp_schema.userinfo as t2 on t1.userID = t2.userID where t1.partyId = ? and t1.reviewed = false"
 )
 
 type server struct {
@@ -50,10 +51,6 @@ type Poster struct {
 	posterId int32
 	distance float64
 }
-type Location struct {
-	Lat float64
-	Lng float64
-}
 type PosterUpdate struct {
 	PosterId int32
 	PartyId  int32
@@ -69,7 +66,45 @@ func verifyClaims(claims *tokenService.UserClaims, userId int32, partyId int32) 
 	}
 	return true
 }
+func (s *server) RetrieveJoinRequests(ctx context.Context, in *pb.RetrieveJoinRequest) (*pb.RetrieveJoinResponse, error) {
 
+	if in.GetPartyId() == 0 {
+		return &pb.RetrieveJoinResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("partyId not set")
+	}
+	if in.GetUserId() == 0 {
+		return &pb.RetrieveJoinResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("userID not set")
+	}
+	if in.GetAuthKey() == "" {
+		return &pb.RetrieveJoinResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authkey not set")
+	}
+	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
+	if userClaims == nil || userClaims.Valid() != nil || userClaims.UserID != in.UserId {
+		return &pb.RetrieveJoinResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey is invalid. please login again")
+	}
+	if !verifyClaims(userClaims, in.GetUserId(), in.GetPartyId()) {
+		return &pb.RetrieveJoinResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey does not match supplied id's. Please login again")
+	}
+	//check that the user is admin of the party
+	rows, err := s.DB.Query("select * from fyp_schema.parties where partyId = ? and admin = ?", in.GetPartyId(), in.GetUserId())
+	if err != nil {
+		return &pb.RetrieveJoinResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query party table: %v", err)
+	}
+	if !rows.Next() {
+		return &pb.RetrieveJoinResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("to retrieve join requests you must be admin of the party")
+	}
+	//retrieve unreviewed join requests
+	rows, err = s.DB.Query(joinRequestQuery, in.GetPartyId())
+	var memberList []*pb.Member
+	for rows.Next() {
+		var member pb.Member
+		err := rows.Scan(&member.UserId, &member.FirstName, &member.LastName)
+		if err != nil {
+			return &pb.RetrieveJoinResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("error while reading from database %v", err)
+		}
+		memberList = append(memberList, &member)
+	}
+	return &pb.RetrieveJoinResponse{Code: pb.ResponseCode_OK, Members: memberList}, nil
+}
 func (s *server) JoinParty(ctx context.Context, in *pb.JoinPartyRequest) (*pb.JoinPartyResponse, error) {
 
 	if in.UserId == 0 {
