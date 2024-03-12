@@ -69,6 +69,61 @@ func verifyClaims(claims *tokenService.UserClaims, userId int32, partyId int32) 
 	}
 	return true
 }
+
+func (s *server) JoinParty(ctx context.Context, in *pb.JoinPartyRequest) (*pb.JoinPartyResponse, error) {
+
+	if in.UserId == 0 {
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("userID not set")
+	}
+	if in.GetPartyId() == 0 {
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("partyID not set")
+	}
+	if in.GetAuthKey() == "" {
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey not set")
+	}
+	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
+	if userClaims == nil || userClaims.Valid() != nil || userClaims.UserID != in.UserId {
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey is invalid. please login again")
+	}
+
+	// check that party exists
+	rows, err := s.DB.Query("select * from fyp_schema.parties where partyId = ?", in.GetPartyId())
+	if err != nil {
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query party table %v", err)
+	}
+	if !rows.Next() {
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("party does not exist")
+	}
+
+	// check user is not already admin of a party
+	rows, err = s.DB.Query("select * from fyp_schema.parties where admin = ?", in.GetUserId())
+	if err != nil {
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query party table: %v", err)
+	}
+	// should have no rows in response
+	if rows.Next() {
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("can not join party while you are admin of a party")
+	}
+
+	//check that user has not already requested to join party
+	rows, err = s.DB.Query("select * from fyp_schema.joinRequests where userID = ? and partyID = ? and reviewed = false", in.GetUserId(), in.GetPartyId())
+	if err != nil {
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query party table: %v", err)
+	}
+	// should have no rows in response
+	if rows.Next() {
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("request still pending")
+	}
+
+	// create update in party request table
+	_, err = s.DB.Exec("insert into fyp_schema.joinRequests (userID,partyID) values(?,?)", in.GetUserId(), in.GetPartyId())
+	if err != nil {
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to create join request")
+	}
+
+	return &pb.JoinPartyResponse{Code: pb.ResponseCode_OK}, nil
+}
+
 func (s *server) RegisterParty(ctx context.Context, in *pb.RegisterPartyRequest) (*pb.RegisterPartyResponse, error) {
 	if in.PartyName == "" {
 		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("party name can not be empty")
@@ -82,7 +137,7 @@ func (s *server) RegisterParty(ctx context.Context, in *pb.RegisterPartyRequest)
 
 	// verify authkey
 	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
-	if userClaims == nil || userClaims.Valid() != nil {
+	if userClaims == nil || userClaims.Valid() != nil || userClaims.UserID != in.UserId {
 		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey is invalid. please login again")
 	}
 	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
@@ -145,6 +200,7 @@ func (s *server) RegisterParty(ctx context.Context, in *pb.RegisterPartyRequest)
 	_ = tx.Commit()
 	return &pb.RegisterPartyResponse{Code: pb.ResponseCode_OK, PartyId: int32(partyId), AuthKey: authKey}, nil
 }
+
 func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.PlacementResponse, error) {
 	if in.GetLocation() == nil {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("location of poster not set")
