@@ -1026,3 +1026,101 @@ func Test_RetrieveUpdates(t *testing.T) {
 		})
 	}
 }
+
+func Test_RetrieveParties(t *testing.T) {
+	tests := []struct {
+		name        string
+		userId      int32
+		partyId     int32
+		wantErr     bool
+		invalidAuth bool
+		returnRows  *sqlmock.Rows
+
+		wantResponse *pb.RetrievePartiesResponse
+	}{
+		{
+			name:         "invalid Authkey",
+			userId:       1,
+			partyId:      1,
+			returnRows:   sqlmock.NewRows([]string{"partyID", "partyName"}),
+			invalidAuth:  true,
+			wantResponse: &pb.RetrievePartiesResponse{Code: pb.ResponseCode_FAILED},
+			wantErr:      true,
+		},
+		{
+			name:         "no parties",
+			userId:       1,
+			partyId:      1,
+			returnRows:   sqlmock.NewRows([]string{"partyID", "partyName"}),
+			wantResponse: &pb.RetrievePartiesResponse{Code: pb.ResponseCode_OK},
+			invalidAuth:  false,
+			wantErr:      false,
+		},
+		{
+			name:        "1 party",
+			partyId:     1,
+			returnRows:  sqlmock.NewRows([]string{"partyID", "partyName"}).AddRow(1, "fake_party"),
+			wantErr:     false,
+			invalidAuth: false,
+			wantResponse: &pb.RetrievePartiesResponse{Code: pb.ResponseCode_OK, Parties: []*pb.Party{
+				{Name: "fake_party", PartyID: 1},
+			}},
+		},
+		{
+			name:   "multiple parties",
+			userId: 1,
+			returnRows: sqlmock.NewRows([]string{"partyID", "partyName"}).
+				AddRow(1, "fake_party1").
+				AddRow(2, "fake_party2").
+				AddRow(3, "fake_party3"),
+			wantErr: false,
+			wantResponse: &pb.RetrievePartiesResponse{Code: pb.ResponseCode_OK, Parties: []*pb.Party{
+				{Name: "fake_party1", PartyID: 1},
+				{Name: "fake_party2", PartyID: 2},
+				{Name: "fake_party3", PartyID: 3},
+			}},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, mock, err := sqlmock.New()
+			defer db.Close()
+			if err != nil {
+				t.Fatalf("an error occured while creating fake sql database %v", err)
+
+			}
+			server := &server{DB: db}
+			mock.ExpectQuery("select").WillReturnRows(tc.returnRows)
+
+			userClaims := tokenService.UserClaims{
+				UserID:   tc.userId,
+				Username: "test",
+				PartyId:  tc.partyId,
+				StandardClaims: jwt.StandardClaims{
+					IssuedAt:  time.Now().Unix(),
+					ExpiresAt: time.Now().Add(time.Hour * 48).Unix(),
+				},
+			}
+			authKey := ""
+			if !tc.invalidAuth {
+				authKey, err = tokenService.NewAccessToken(userClaims)
+				if err != nil {
+					t.Fatalf("failed to create jwt: %v", err)
+				}
+			}
+
+			res, err := server.RetrieveParties(ctx, &pb.RetrievePartiesRequest{AuthKey: authKey})
+
+			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
+				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
+			}
+
+			if !proto.Equal(res, tc.wantResponse) {
+				t.Fatalf("expected: %v\n got: %v", tc.wantResponse, res)
+			}
+
+		})
+	}
+}

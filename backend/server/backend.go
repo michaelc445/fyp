@@ -112,6 +112,7 @@ func (s *server) ApproveMembers(ctx context.Context, in *pb.ApproveMemberRequest
 			// no join request from this user
 			if !rows.Next() {
 				_ = tx.Rollback()
+				fmt.Printf("failed approve request for user: %d\n", member.GetUserId())
 				return &pb.ApproveMemberResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("no join request from this user: %s %s", member.GetFirstName(), member.GetLastName())
 			}
 			err = rows.Close()
@@ -547,6 +548,37 @@ func (s *server) RetrieveUpdates(ctx context.Context, in *pb.UpdateRequest) (*pb
 	return &pb.UpdateResponse{Posters: posters, Code: pb.ResponseCode_OK}, nil
 }
 
+type Party struct {
+	PartyID   int32
+	PartyName string
+}
+
+func (s *server) RetrieveParties(ctx context.Context, in *pb.RetrievePartiesRequest) (*pb.RetrievePartiesResponse, error) {
+	if in.GetAuthKey() == "" {
+		return &pb.RetrievePartiesResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("auth key is empty")
+	}
+	// verify authkey
+	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
+	if userClaims == nil || userClaims.Valid() != nil {
+		return &pb.RetrievePartiesResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey is invalid. please login again")
+	}
+
+	rows, err := s.DB.Query("select partyID, partyName from fyp_schema.parties")
+	if err != nil {
+		return &pb.RetrievePartiesResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to retrieve party list from database %v", err)
+	}
+	var parties []*pb.Party
+	for rows.Next() {
+		party := pb.Party{}
+		err = rows.Scan(&party.PartyID, &party.Name)
+		if err != nil {
+			return &pb.RetrievePartiesResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to get party list: %v", err)
+		}
+		parties = append(parties, &party)
+	}
+
+	return &pb.RetrievePartiesResponse{Code: pb.ResponseCode_OK, Parties: parties}, nil
+}
 func hash(password string) (string, error) {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
 	if err != nil {
