@@ -235,12 +235,25 @@ func (s *server) JoinParty(ctx context.Context, in *pb.JoinPartyRequest) (*pb.Jo
 		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("request still pending")
 	}
 	_ = rows.Close()
-	// create update in party request table
-	_, err = s.DB.Exec("insert into fyp_schema.joinRequests (userID,partyID) values(?,?)", in.GetUserId(), in.GetPartyId())
+
+	// set all active join requests for this user to reviewed
+	// i.e user can only have 1 pending request at a time
+	tx, err := s.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelSerializable})
 	if err != nil {
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to start transaction: %v", err)
+	}
+	_, err = tx.Exec("update fyp_schema.joinRequests set reviewed = true where userID = ? and id > 0 and reviewed = false", in.GetUserId())
+	if err != nil {
+		_ = tx.Rollback()
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to reset join requests: %v", err)
+	}
+	// create update in party request table
+	_, err = tx.Exec("insert into fyp_schema.joinRequests (userID,partyID) values(?,?)", in.GetUserId(), in.GetPartyId())
+	if err != nil {
+		_ = tx.Rollback()
 		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to create join request")
 	}
-
+	_ = tx.Commit()
 	return &pb.JoinPartyResponse{Code: pb.ResponseCode_OK}, nil
 }
 

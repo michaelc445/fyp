@@ -361,7 +361,11 @@ func TestJoinParty(t *testing.T) {
 			mock.ExpectQuery("select").WithArgs(tc.partyId).WillReturnRows(tc.partyExistsRows)
 			mock.ExpectQuery("select").WithArgs(tc.userId).WillReturnRows(tc.userAdminRows)
 			mock.ExpectQuery("select").WithArgs(tc.userId, tc.partyId).WillReturnRows(tc.joinRequestExistsRows)
+
+			mock.ExpectBegin()
+			mock.ExpectExec("update").WithArgs(tc.userId).WillReturnResult(driver.ResultNoRows)
 			mock.ExpectExec("insert").WithArgs(tc.userId, tc.partyId).WillReturnResult(tc.joinRequestResult)
+			mock.ExpectCommit()
 
 			userClaims := tokenService.UserClaims{
 				UserID:   tc.userId,
