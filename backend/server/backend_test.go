@@ -55,7 +55,7 @@ func TestApproveMembers(t *testing.T) {
 		{
 			name:      "approve members",
 			userId:    1,
-			partyId:   1,
+			partyId:   3,
 			wantCode:  pb.ResponseCode_OK,
 			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
 			approvedMembers: []*pb.Member{
@@ -80,7 +80,7 @@ func TestApproveMembers(t *testing.T) {
 		},
 		{
 			name:      "approve and deny members",
-			userId:    2,
+			userId:    3,
 			partyId:   1,
 			wantCode:  pb.ResponseCode_OK,
 			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
@@ -116,8 +116,9 @@ func TestApproveMembers(t *testing.T) {
 				mock.ExpectQuery("select").
 					WithArgs(member.GetUserId(), tc.partyId).
 					WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
-				mock.ExpectExec("update").WithArgs(tc.partyId, member.GetUserId()).WillReturnResult(sqlmock.NewResult(1, 1))
-				mock.ExpectExec("update").WithArgs(member.GetUserId(), tc.partyId).WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectExec("update fyp_schema.users").WithArgs(tc.partyId, member.GetUserId()).WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectExec("update fyp_schema.posters").WithArgs(tc.partyId, member.GetUserId()).WillReturnResult(sqlmock.NewResult(1, 1))
+				mock.ExpectExec("update fyp_schema.joinRequests").WithArgs(member.GetUserId(), tc.partyId).WillReturnResult(sqlmock.NewResult(1, 1))
 			}
 
 			for _, member := range tc.deniedMembers {

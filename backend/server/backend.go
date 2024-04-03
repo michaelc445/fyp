@@ -125,7 +125,12 @@ func (s *server) ApproveMembers(ctx context.Context, in *pb.ApproveMemberRequest
 				_ = tx.Rollback()
 				return &pb.ApproveMemberResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to update user: %v", err)
 			}
-
+			// update users posters to belong to new party
+			_, err = tx.Exec("update fyp_schema.posters set partyId = ? where userId = ? and posterId > 0", in.GetPartyId(), member.GetUserId())
+			if err != nil {
+				_ = tx.Rollback()
+				return &pb.ApproveMemberResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to update users posters: %v", err)
+			}
 			// set request = reviewed
 			_, err = tx.Exec("update fyp_schema.joinRequests set reviewed = true where userId = ? and partyId = ?", member.GetUserId(), in.GetPartyId())
 			if err != nil {
