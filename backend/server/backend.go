@@ -66,7 +66,46 @@ func verifyClaims(claims *tokenService.UserClaims, userId int32, partyId int32) 
 	}
 	return true
 }
+func (s *server) RetrieveProfileStats(ctx context.Context, in *pb.ProfileRequest) (*pb.ProfileResponse, error) {
 
+	if in.GetPartyId() == 0 {
+		return &pb.ProfileResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("partyId not set")
+	}
+	if in.GetUserId() == 0 {
+		return &pb.ProfileResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("userId not set")
+	}
+	if in.GetAuthKey() == "" {
+		return &pb.ProfileResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey not set")
+	}
+	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
+	if userClaims == nil || userClaims.Valid() != nil {
+		return &pb.ProfileResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey is invalid. please login again")
+	}
+	if !verifyClaims(userClaims, in.GetUserId(), in.GetPartyId()) {
+		return &pb.ProfileResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey does not match supplied id's. Please login again")
+	}
+
+	// get number of posters placed and removed by user
+	rows, err := s.DB.Query(
+		`		select l1.placed, l2.removed, l3.partyName 
+					from (select count(posterId) as placed from fyp_schema.posters where userID = ?) as l1 
+				    join (select count(posterId) as removed from fyp_schema.posters where removedBy = ?) as l2 
+				    join (select partyName from fyp_schema.parties where partyId = ?) as l3;`, in.GetUserId(), in.GetUserId(), in.GetPartyId())
+	if err != nil {
+		return &pb.ProfileResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query profile statistics: %v", err)
+	}
+
+	if !rows.Next() {
+		return &pb.ProfileResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query database")
+	}
+	placed, removed, partyName := 0, 0, ""
+	err = rows.Scan(&placed, &removed, &partyName)
+	if err != nil {
+		return &pb.ProfileResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to read sql response: %v", err)
+	}
+
+	return &pb.ProfileResponse{Code: pb.ResponseCode_OK, PlacedPosters: int32(placed), RemovedPosters: int32(removed), PartyName: partyName}, nil
+}
 func (s *server) ApproveMembers(ctx context.Context, in *pb.ApproveMemberRequest) (*pb.ApproveMemberResponse, error) {
 	if in.GetPartyId() == 0 {
 		return &pb.ApproveMemberResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("partyId not set")

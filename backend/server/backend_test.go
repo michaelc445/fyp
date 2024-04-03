@@ -17,6 +17,79 @@ import (
 	pb "github.com/michaelc445/proto"
 )
 
+func TestRetrieveProfileStats(t *testing.T) {
+	tests := []struct {
+		name      string
+		userId    int32
+		partyId   int32
+		queryRows *sqlmock.Rows
+		wantErr   bool
+		wantRes   *pb.ProfileResponse
+	}{
+		{
+			name:      "userId not set",
+			partyId:   1,
+			queryRows: sqlmock.NewRows([]string{"placed", "removed", "partyName"}).AddRow(1, 1, "fake_party"),
+			wantErr:   true,
+			wantRes:   &pb.ProfileResponse{Code: pb.ResponseCode_FAILED},
+		},
+		{
+			name:      "partyId not set",
+			userId:    1,
+			queryRows: sqlmock.NewRows([]string{"placed", "removed", "partyName"}).AddRow(1, 1, "fake_party"),
+			wantErr:   true,
+			wantRes:   &pb.ProfileResponse{Code: pb.ResponseCode_FAILED},
+		},
+		{
+			name:      "success",
+			partyId:   1,
+			userId:    1,
+			queryRows: sqlmock.NewRows([]string{"placed", "removed", "partyName"}).AddRow(3, 4, "fake_party"),
+			wantErr:   false,
+			wantRes:   &pb.ProfileResponse{Code: pb.ResponseCode_OK, PlacedPosters: 3, RemovedPosters: 4, PartyName: "fake_party"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, mock, err := sqlmock.New()
+			defer db.Close()
+			if err != nil {
+				t.Fatalf("an error occured while creating fake sql database %v", err)
+
+			}
+			server := &server{DB: db}
+
+			mock.ExpectQuery("select").WithArgs(tc.userId, tc.userId, tc.partyId).WillReturnRows(tc.queryRows)
+
+			userClaims := tokenService.UserClaims{
+				UserID:   tc.userId,
+				Username: "test",
+				PartyId:  tc.partyId,
+				StandardClaims: jwt.StandardClaims{
+					IssuedAt:  time.Now().Unix(),
+					ExpiresAt: time.Now().Add(time.Hour * 48).Unix(),
+				},
+			}
+			authKey, err := tokenService.NewAccessToken(userClaims)
+			if err != nil {
+				t.Fatalf("failed to create jwt: %v", err)
+			}
+			res, err := server.RetrieveProfileStats(ctx, &pb.ProfileRequest{UserId: tc.userId, AuthKey: authKey, PartyId: tc.partyId})
+
+			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
+				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
+			}
+
+			if !proto.Equal(res, tc.wantRes) {
+				t.Fatalf("got response %v want response %v", res, tc.wantRes)
+			}
+
+		})
+	}
+}
+
 func TestApproveMembers(t *testing.T) {
 	tests := []struct {
 		name            string
