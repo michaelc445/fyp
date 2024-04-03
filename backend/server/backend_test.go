@@ -618,7 +618,7 @@ func TestRemovePoster(t *testing.T) {
 			}
 			server := &server{DB: db}
 			mock.ExpectQuery("select").WithArgs(tc.location.GetLat(), tc.location.GetLng(), tc.partyId, removePosterMaxDistance).WillReturnRows(tc.returnRows)
-			mock.ExpectExec("update").WithArgs(tc.posterId, tc.partyId).WillReturnResult(sqlmock.NewResult(0, 0))
+			mock.ExpectExec("update").WithArgs(tc.userId, tc.posterId, tc.partyId).WillReturnResult(sqlmock.NewResult(0, 0))
 
 			userClaims := tokenService.UserClaims{
 				UserID:   tc.userId,

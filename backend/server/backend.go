@@ -27,7 +27,7 @@ var (
 	port                    = flag.Int("port", 50051, "The server port")
 	placePosterQuery        = "insert into fyp_schema.posters (partyId, userId, created,updated,location) values (?,?,NOW(),NOW(),point(?,?))"
 	checkPosterQuery        = "select partyId, posterId from fyp_schema.posters where posterId = ?"
-	removePosterQuery       = "update fyp_schema.posters set removed = now(), updated = now() where posterID = ? and partyID = ?;"
+	removePosterQuery       = "update fyp_schema.posters set removed = now(), updated = now(), removedBy = ? where posterID = ? and partyID = ?;"
 	registerAccountQuery    = "insert into fyp_schema.users (partyId, username, pwhash) values (1,?,?)"
 	accountExistsQuery      = "select username, userId from fyp_schema.users where username = ?"
 	addUserinfoQuery        = "insert into fyp_schema.userinfo (userID, firstName, lastName,location) values (?,?,?,null)"
@@ -411,7 +411,7 @@ func (s *server) RemovePoster(ctx context.Context, in *pb.RemovePosterRequest) (
 		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to scan sql result: %v", err)
 	}
 
-	_, err = s.DB.Exec(removePosterQuery, poster.posterId, in.GetPartyId())
+	_, err = s.DB.Exec(removePosterQuery, in.GetUserId(), poster.posterId, in.GetPartyId())
 	if err != nil {
 		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to remove poster: %v", err)
 	}
@@ -529,6 +529,7 @@ func (s *server) RetrieveUpdates(ctx context.Context, in *pb.UpdateRequest) (*pb
 	if in.GetLastUpdated() == nil {
 		return &pb.UpdateResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("no lastUpdated provided")
 	}
+
 	// verify authkey
 	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
 	if userClaims == nil || userClaims.Valid() != nil {
@@ -557,7 +558,7 @@ func (s *server) RetrieveUpdates(ctx context.Context, in *pb.UpdateRequest) (*pb
 		}
 		posters = append(posters, &pb.Poster{PlacedBy: poster.UserID, Party: poster.PartyId, Posterid: poster.PosterId, Location: &poster.location, Removed: t})
 	}
-
+	fmt.Printf("updates from: %v\nnumber of updates: %v\n", in.GetLastUpdated().AsTime(), len(posters))
 	return &pb.UpdateResponse{Posters: posters, Code: pb.ResponseCode_OK}, nil
 }
 
