@@ -17,6 +17,249 @@ import (
 	pb "github.com/michaelc445/proto"
 )
 
+func TestOutstandingPosters(t *testing.T) {
+
+	tests := []struct {
+		name         string
+		userId       int32
+		partyId      int32
+		posterRows   *sqlmock.Rows
+		electionDate time.Time
+		wantErr      bool
+		wantRes      *pb.PosterTimeResponse
+	}{
+		{
+			name:    "userId not set",
+			partyId: 1,
+			posterRows: sqlmock.NewRows([]string{"created", "posterId", "userID", "username", "firstName", "lastName"}).
+				AddRow(time.Now().Unix(), 1, 1, "michael1234", "Michael", "test1").
+				AddRow(time.Now().Unix(), 2, 2, "michael1235", "Michael", "test2").
+				AddRow(time.Now().Unix(), 3, 3, "michael1236", "Michael", "test3").
+				AddRow(time.Now().Unix(), 4, 4, "michael1237", "Michael", "test4"),
+
+			electionDate: time.Now(),
+			wantErr:      true,
+			wantRes:      &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED},
+		},
+		{
+			name:   "partyId not set",
+			userId: 1,
+			posterRows: sqlmock.NewRows([]string{"created", "posterId", "userID", "username", "firstName", "lastName"}).
+				AddRow(time.Now().Unix(), 1, 1, "michael1234", "Michael", "test1").
+				AddRow(time.Now().Unix(), 2, 2, "michael1235", "Michael", "test2").
+				AddRow(time.Now().Unix(), 3, 3, "michael1236", "Michael", "test3").
+				AddRow(time.Now().Unix(), 4, 4, "michael1237", "Michael", "test4"),
+
+			electionDate: time.Now(),
+			wantErr:      true,
+			wantRes:      &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED},
+		},
+		{
+			name:    "success",
+			partyId: 1,
+			userId:  1,
+			posterRows: sqlmock.NewRows([]string{"created", "posterId", "userID", "username", "firstName", "lastName"}).
+				AddRow(time.Now().Unix(), 1, 1, "michael1234", "Michael", "test1").
+				AddRow(time.Now().Unix(), 2, 2, "michael1235", "Michael", "test2").
+				AddRow(time.Now().Unix(), 3, 3, "michael1236", "Michael", "test3").
+				AddRow(time.Now().Unix(), 4, 4, "michael1237", "Michael", "test4"),
+
+			electionDate: time.Now(),
+			wantErr:      false,
+			wantRes: &pb.PosterTimeResponse{
+				Code: pb.ResponseCode_OK,
+				Posters: []*pb.PosterUser{
+					{Poster: &pb.Poster{PlacedBy: 1, Posterid: 1}, Username: "michael1234", FirstName: "Michael", LastName: "test1", Created: timestamppb.Now()},
+					{Poster: &pb.Poster{PlacedBy: 2, Posterid: 2}, Username: "michael1235", FirstName: "Michael", LastName: "test2", Created: timestamppb.Now()},
+					{Poster: &pb.Poster{PlacedBy: 3, Posterid: 3}, Username: "michael1236", FirstName: "Michael", LastName: "test3", Created: timestamppb.Now()},
+					{Poster: &pb.Poster{PlacedBy: 4, Posterid: 4}, Username: "michael1237", FirstName: "Michael", LastName: "test4", Created: timestamppb.Now()},
+				},
+				RemovalDate: timestamppb.Now(),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, mock, err := sqlmock.New()
+			defer db.Close()
+			if err != nil {
+				t.Fatalf("an error occured while creating fake sql database %v", err)
+
+			}
+			server := &server{DB: db}
+
+			mock.ExpectQuery("select").WithArgs(tc.partyId).WillReturnRows(tc.posterRows)
+			electionRows := sqlmock.NewRows([]string{"electionDate"}).AddRow(tc.electionDate.Unix())
+			mock.ExpectQuery("select").WithArgs(tc.partyId).WillReturnRows(electionRows)
+			userClaims := tokenService.UserClaims{
+				UserID:   tc.userId,
+				Username: "test",
+				PartyId:  tc.partyId,
+				StandardClaims: jwt.StandardClaims{
+					IssuedAt:  time.Now().Unix(),
+					ExpiresAt: time.Now().Add(time.Hour * 48).Unix(),
+				},
+			}
+
+			authKey, err := tokenService.NewAccessToken(userClaims)
+			if err != nil {
+				t.Fatalf("failed to create jwt: %v", err)
+			}
+			res, err := server.OutstandingPosters(ctx, &pb.PosterTimeRequest{
+				UserId:  tc.userId,
+				AuthKey: authKey,
+				PartyId: tc.partyId,
+			})
+
+			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
+				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
+			}
+			if len(res.GetPosters()) != len(tc.wantRes.GetPosters()) {
+				t.Fatalf("expected posters of length %v got posters of length %v", len(tc.wantRes.GetPosters()), len(res.GetPosters()))
+			}
+
+			for i, val := range res.GetPosters() {
+				if tc.wantRes.Posters[i].FirstName != val.FirstName {
+					t.Fatalf("expected poster %v got poster %v", tc.wantRes.Posters[i], res.Posters[i])
+				}
+				if tc.wantRes.Posters[i].Username != val.Username {
+					t.Fatalf("expected poster %v got poster %v", tc.wantRes.Posters[i], res.Posters[i])
+				}
+				if tc.wantRes.Posters[i].LastName != val.LastName {
+					t.Fatalf("expected poster %v got poster %v", tc.wantRes.Posters[i], res.Posters[i])
+				}
+			}
+
+		})
+	}
+}
+
+func TestNewElection(t *testing.T) {
+	tests := []struct {
+		name         string
+		userId       int32
+		partyId      int32
+		queryRows    *sqlmock.Rows
+		execRes      driver.Result
+		startDate    *timestamppb.Timestamp
+		electionDate *timestamppb.Timestamp
+		wantErr      bool
+		wantRes      *pb.CreateElectionResponse
+	}{
+		{
+			name:         "userId not set",
+			partyId:      1,
+			queryRows:    sqlmock.NewRows([]string{"partyId", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			execRes:      sqlmock.NewResult(1, 1),
+			wantErr:      true,
+			startDate:    timestamppb.New(time.Now().Add(time.Hour)),
+			electionDate: timestamppb.New(time.Now().Add(time.Hour + time.Hour*24*7)),
+			wantRes:      &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED},
+		},
+		{
+			name:         "partyId not set",
+			userId:       1,
+			queryRows:    sqlmock.NewRows([]string{"partyId", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			execRes:      sqlmock.NewResult(1, 1),
+			wantErr:      true,
+			startDate:    timestamppb.New(time.Now().Add(time.Hour)),
+			electionDate: timestamppb.New(time.Now().Add(time.Hour + time.Hour*24*7)),
+			wantRes:      &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED},
+		},
+		{
+			name:         "election in past",
+			partyId:      1,
+			userId:       1,
+			queryRows:    sqlmock.NewRows([]string{"partyId", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			execRes:      sqlmock.NewResult(1, 1),
+			wantErr:      true,
+			startDate:    timestamppb.New(time.Now().Add(-time.Hour * 24 * 8)),
+			electionDate: timestamppb.New(time.Now().Add(-time.Hour * 24 * 7)),
+			wantRes:      &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED},
+		},
+		{
+			name:         "start date after election date",
+			partyId:      1,
+			userId:       1,
+			queryRows:    sqlmock.NewRows([]string{"partyId", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			execRes:      sqlmock.NewResult(1, 1),
+			wantErr:      true,
+			startDate:    timestamppb.New(time.Now().Add(time.Hour * 24 * 8)),
+			electionDate: timestamppb.New(time.Now().Add(time.Hour * 24 * 7)),
+			wantRes:      &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED},
+		},
+		{
+			name:         "user is not admin of party",
+			partyId:      1,
+			userId:       1,
+			queryRows:    sqlmock.NewRows([]string{"partyId", "partyName", "admin"}),
+			execRes:      sqlmock.NewResult(1, 1),
+			wantErr:      true,
+			startDate:    timestamppb.New(time.Now().Add(time.Hour)),
+			electionDate: timestamppb.New(time.Now().Add(time.Hour + time.Hour*24*7)),
+			wantRes:      &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED},
+		},
+		{
+			name:         "success",
+			partyId:      1,
+			userId:       1,
+			queryRows:    sqlmock.NewRows([]string{"partyId", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			execRes:      sqlmock.NewResult(1, 1),
+			wantErr:      false,
+			startDate:    timestamppb.New(time.Now().Add(time.Hour)),
+			electionDate: timestamppb.New(time.Now().Add(time.Hour + time.Hour*24*7)),
+			wantRes:      &pb.CreateElectionResponse{Code: pb.ResponseCode_OK},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			db, mock, err := sqlmock.New()
+			defer db.Close()
+			if err != nil {
+				t.Fatalf("an error occured while creating fake sql database %v", err)
+
+			}
+			server := &server{DB: db}
+
+			mock.ExpectQuery("select").WithArgs(tc.partyId, tc.userId).WillReturnRows(tc.queryRows)
+			mock.ExpectExec("replace").WithArgs(tc.partyId, tc.startDate.AsTime().Unix(), tc.electionDate.AsTime().Unix()).WillReturnResult(tc.execRes)
+			userClaims := tokenService.UserClaims{
+				UserID:   tc.userId,
+				Username: "test",
+				PartyId:  tc.partyId,
+				StandardClaims: jwt.StandardClaims{
+					IssuedAt:  time.Now().Unix(),
+					ExpiresAt: time.Now().Add(time.Hour * 48).Unix(),
+				},
+			}
+			authKey, err := tokenService.NewAccessToken(userClaims)
+			if err != nil {
+				t.Fatalf("failed to create jwt: %v", err)
+			}
+			res, err := server.NewElection(ctx, &pb.CreateElectionRequest{
+				UserId:       tc.userId,
+				AuthKey:      authKey,
+				PartyId:      tc.partyId,
+				StartDate:    tc.startDate,
+				ElectionDate: tc.electionDate,
+			})
+
+			if (!tc.wantErr && err != nil) || (tc.wantErr && err == nil) {
+				t.Fatalf("expected error: %v but got err: %v", tc.wantErr, err)
+			}
+
+			if !proto.Equal(res, tc.wantRes) {
+				t.Fatalf("got response %v want response %v", res, tc.wantRes)
+			}
+
+		})
+	}
+}
+
 func TestRetrieveProfileStats(t *testing.T) {
 	tests := []struct {
 		name      string

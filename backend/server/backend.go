@@ -4,17 +4,15 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"log"
 	"net"
 	"time"
 
-	"github.com/golang/protobuf/ptypes/timestamp"
-
-	"github.com/michaelc445/fyp/tokenService"
-
 	"database/sql"
-
 	"github.com/golang-jwt/jwt"
+	"github.com/golang/protobuf/ptypes/timestamp"
+	"github.com/michaelc445/fyp/tokenService"
 	"golang.org/x/crypto/bcrypt"
 	"google.golang.org/grpc"
 
@@ -27,13 +25,19 @@ var (
 	port                    = flag.Int("port", 50051, "The server port")
 	placePosterQuery        = "insert into fyp_schema.posters (partyId, userId, created,updated,location) values (?,?,NOW(),NOW(),point(?,?))"
 	checkPosterQuery        = "select partyId, posterId from fyp_schema.posters where posterId = ?"
-	removePosterQuery       = "update fyp_schema.posters set removed = now(), updated = now(), removedBy = ? where posterID = ? and partyID = ?;"
-	registerAccountQuery    = "insert into fyp_schema.users (partyId, username, pwhash) values (1,?,?)"
-	accountExistsQuery      = "select username, userId from fyp_schema.users where username = ?"
-	addUserinfoQuery        = "insert into fyp_schema.userinfo (userID, firstName, lastName,location) values (?,?,?,null)"
-	posterDistanceQuery     = "select posterID, ST_Distance_Sphere(location, point(?,?)) as distance from fyp_schema.posters where partyID = ? and removed is null having distance < ? order by distance asc limit 1;"
-	userInfoQuery           = "select users.userID,users.partyID,users.username,users.pwhash,parties.partyName from fyp_schema.users join fyp_schema.parties on users.partyID = parties.partyID where users.username = ?"
-	joinRequestQuery        = "select t1.userid, t2.firstName, t2.lastname from fyp_schema.joinRequests as t1 join fyp_schema.userinfo as t2 on t1.userID = t2.userID where t1.partyId = ? and t1.reviewed = false"
+	outstandingPosterQuery  = `	select unix_timestamp(l2.created), l2.posterId, l2.userId, l4.username,l3.firstName, l3.lastName
+								from fyp_schema.elections as l1
+								join fyp_schema.posters as l2 on l1.partyId = l2.partyID
+								join fyp_schema.userinfo as l3 on l2.userID = l3.userID
+								join fyp_schema.users as l4 on l2.userId = l4.userId
+								where l1.partyId = ? and l2.removed is null and l2.created > l1.startDate;`
+	removePosterQuery    = "update fyp_schema.posters set removed = now(), updated = now(), removedBy = ? where posterID = ? and partyID = ?;"
+	registerAccountQuery = "insert into fyp_schema.users (partyId, username, pwhash) values (1,?,?)"
+	accountExistsQuery   = "select username, userId from fyp_schema.users where username = ?"
+	addUserinfoQuery     = "insert into fyp_schema.userinfo (userID, firstName, lastName,location) values (?,?,?,null)"
+	posterDistanceQuery  = "select posterID, ST_Distance_Sphere(location, point(?,?)) as distance from fyp_schema.posters where partyID = ? and removed is null having distance < ? order by distance asc limit 1;"
+	userInfoQuery        = "select users.userID,users.partyID,users.username,users.pwhash,parties.partyName from fyp_schema.users join fyp_schema.parties on users.partyID = parties.partyID where users.username = ?"
+	joinRequestQuery     = "select t1.userid, t2.firstName, t2.lastname from fyp_schema.joinRequests as t1 join fyp_schema.userinfo as t2 on t1.userID = t2.userID where t1.partyId = ? and t1.reviewed = false"
 )
 
 type server struct {
@@ -59,12 +63,126 @@ type PosterUpdate struct {
 	Removed  timestamp.Timestamp
 	location pb.Location
 }
+type OutstandingPoster struct {
+	created   int64
+	posterId  int32
+	userID    int32
+	username  string
+	firstName string
+	lastName  string
+}
 
+func hash(password string) (string, error) {
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	if err != nil {
+		return "", err
+	}
+	return string(bytes), nil
+}
 func verifyClaims(claims *tokenService.UserClaims, userId int32, partyId int32) bool {
 	if claims.UserID != userId || claims.PartyId != partyId {
 		return false
 	}
 	return true
+}
+
+func (s *server) OutstandingPosters(ctx context.Context, in *pb.PosterTimeRequest) (*pb.PosterTimeResponse, error) {
+	if in.GetAuthKey() == "" {
+		return &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authkey not set")
+	}
+	if in.GetUserId() == 0 {
+		return &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("userid not set")
+	}
+	if in.GetPartyId() == 0 {
+		return &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("partyId not set")
+	}
+	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
+	if userClaims == nil || userClaims.Valid() != nil {
+		return &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey is invalid. please login again")
+	}
+	if !verifyClaims(userClaims, in.GetUserId(), in.GetPartyId()) {
+		return &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey does not match supplied id's. Please login again")
+	}
+	rows, err := s.DB.Query(outstandingPosterQuery, in.GetPartyId())
+	if err != nil {
+		return &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query outsatanding posters: %v", err)
+	}
+
+	var posters []*pb.PosterUser
+	for rows.Next() {
+		var poster OutstandingPoster
+		err = rows.Scan(&poster.created, &poster.posterId, &poster.userID, &poster.username, &poster.firstName, &poster.lastName)
+		if err != nil {
+			return &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to read from from sql result: %v", err)
+		}
+		posters = append(posters, &pb.PosterUser{
+			Poster:    &pb.Poster{Posterid: poster.posterId, PlacedBy: poster.userID},
+			Created:   timestamppb.New(time.Unix(poster.created, 0)),
+			Username:  poster.username,
+			FirstName: poster.firstName,
+			LastName:  poster.lastName,
+		})
+	}
+	rows.Close()
+	rows, err = s.DB.Query("select unix_timestamp(endDate) from fyp_schema.elections where partyId = ?", in.GetPartyId())
+	if err != nil {
+		return &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query election end date: %v", err)
+	}
+	if !rows.Next() {
+		return &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("party admin must create an election first")
+	}
+	var electionDate int64
+	err = rows.Scan(&electionDate)
+	if err != nil {
+		return &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to read election date from query: %v", err)
+	}
+	rows.Close()
+	return &pb.PosterTimeResponse{Code: pb.ResponseCode_OK, Posters: posters, RemovalDate: timestamppb.New(time.UnixMilli(electionDate))}, nil
+}
+func (s *server) NewElection(ctx context.Context, in *pb.CreateElectionRequest) (*pb.CreateElectionResponse, error) {
+	if in.GetAuthKey() == "" {
+		return &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authkey not set")
+	}
+	if in.GetUserId() == 0 {
+		return &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("userid not set")
+	}
+	if in.GetPartyId() == 0 {
+		return &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("partyId not set")
+	}
+	userClaims := tokenService.ParseAccessToken(in.GetAuthKey())
+	if userClaims == nil || userClaims.Valid() != nil {
+		return &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey is invalid. please login again")
+	}
+	if !verifyClaims(userClaims, in.GetUserId(), in.GetPartyId()) {
+		return &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey does not match supplied id's. Please login again")
+	}
+
+	// check the user is admin
+	rows, err := s.DB.Query("select * from fyp_schema.parties where partyID = ? and admin = ?", in.GetPartyId(), in.GetUserId())
+
+	if err != nil {
+		return &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to check permissions: %v", err)
+	}
+	if !rows.Next() {
+		return &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("only party admin can create a new election")
+	}
+	// check that election is in the future
+	if in.GetElectionDate().AsTime().UnixMilli() <= time.Now().UnixMilli() {
+		return &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("election must be in the future")
+	}
+	// check that date of election is after the start date of election
+	if in.GetStartDate().GetSeconds() >= in.GetElectionDate().GetSeconds() {
+		return &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("election date must come after the start date")
+	}
+
+	// add election to database, replacing the old election if it exists
+	_, err = s.DB.Exec("replace into fyp_schema.elections (partyId, startDate, endDate) values (?,from_unixtime(?),from_unixtime(?))", in.GetPartyId(), in.GetStartDate().AsTime().Unix(), in.GetElectionDate().AsTime().Unix())
+
+	if err != nil {
+		return &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to update election %v", err)
+	}
+
+	return &pb.CreateElectionResponse{Code: pb.ResponseCode_OK}, nil
 }
 func (s *server) RetrieveProfileStats(ctx context.Context, in *pb.ProfileRequest) (*pb.ProfileResponse, error) {
 
@@ -192,7 +310,6 @@ func (s *server) ApproveMembers(ctx context.Context, in *pb.ApproveMemberRequest
 	_ = tx.Commit()
 	return &pb.ApproveMemberResponse{Code: pb.ResponseCode_OK}, nil
 }
-
 func (s *server) RetrieveJoinRequests(ctx context.Context, in *pb.RetrieveJoinRequest) (*pb.RetrieveJoinResponse, error) {
 
 	if in.GetPartyId() == 0 {
@@ -300,7 +417,6 @@ func (s *server) JoinParty(ctx context.Context, in *pb.JoinPartyRequest) (*pb.Jo
 	_ = tx.Commit()
 	return &pb.JoinPartyResponse{Code: pb.ResponseCode_OK}, nil
 }
-
 func (s *server) RegisterParty(ctx context.Context, in *pb.RegisterPartyRequest) (*pb.RegisterPartyResponse, error) {
 	if in.PartyName == "" {
 		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("party name can not be empty")
@@ -378,7 +494,6 @@ func (s *server) RegisterParty(ctx context.Context, in *pb.RegisterPartyRequest)
 	_ = tx.Commit()
 	return &pb.RegisterPartyResponse{Code: pb.ResponseCode_OK, PartyId: int32(partyId), AuthKey: authKey}, nil
 }
-
 func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.PlacementResponse, error) {
 	if in.GetLocation() == nil {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("location of poster not set")
@@ -412,7 +527,6 @@ func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.
 
 	return &pb.PlacementResponse{Code: pb.ResponseCode_OK, PosterId: int32(id)}, nil
 }
-
 func (s *server) RemovePoster(ctx context.Context, in *pb.RemovePosterRequest) (*pb.RemovePosterResponse, error) {
 	if in.GetUserId() == 0 {
 		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("userId not set")
@@ -461,7 +575,6 @@ func (s *server) RemovePoster(ctx context.Context, in *pb.RemovePosterRequest) (
 	}
 	return &pb.RemovePosterResponse{Code: pb.ResponseCode_OK, Posterid: poster.posterId}, nil
 }
-
 func (s *server) RegisterAccount(ctx context.Context, in *pb.RegisterAccountRequest) (*pb.RegisterAccountResponse, error) {
 	if in.GetUsername() == "" {
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("username can't be empty")
@@ -515,7 +628,6 @@ func (s *server) RegisterAccount(ctx context.Context, in *pb.RegisterAccountRequ
 	_ = tx.Commit()
 	return &pb.RegisterAccountResponse{Code: pb.ResponseCode_OK}, nil
 }
-
 func (s *server) LoginAccount(ctx context.Context, in *pb.LoginRequest) (*pb.LoginResponse, error) {
 	if in.GetUsername() == "" {
 		return &pb.LoginResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("username not supplied")
@@ -559,7 +671,6 @@ func (s *server) LoginAccount(ctx context.Context, in *pb.LoginRequest) (*pb.Log
 
 	return &pb.LoginResponse{AuthKey: accessToken, Code: pb.ResponseCode_OK, Party: result.PartyName, UserId: int32(result.UserId), PartyId: int32(result.PartyId)}, nil
 }
-
 func (s *server) RetrieveUpdates(ctx context.Context, in *pb.UpdateRequest) (*pb.UpdateResponse, error) {
 	if in.GetAuthKey() == "" {
 		return &pb.UpdateResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("no authkey provided")
@@ -605,12 +716,6 @@ func (s *server) RetrieveUpdates(ctx context.Context, in *pb.UpdateRequest) (*pb
 	fmt.Printf("updates from: %v\nnumber of updates: %v\n", in.GetLastUpdated().AsTime(), len(posters))
 	return &pb.UpdateResponse{Posters: posters, Code: pb.ResponseCode_OK}, nil
 }
-
-type Party struct {
-	PartyID   int32
-	PartyName string
-}
-
 func (s *server) RetrieveParties(ctx context.Context, in *pb.RetrievePartiesRequest) (*pb.RetrievePartiesResponse, error) {
 	if in.GetAuthKey() == "" {
 		return &pb.RetrievePartiesResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("auth key is empty")
@@ -637,13 +742,7 @@ func (s *server) RetrieveParties(ctx context.Context, in *pb.RetrievePartiesRequ
 
 	return &pb.RetrievePartiesResponse{Code: pb.ResponseCode_OK, Parties: parties}, nil
 }
-func hash(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
-	if err != nil {
-		return "", err
-	}
-	return string(bytes), nil
-}
+
 func main() {
 	flag.Parse()
 	lis, err := net.Listen("tcp", fmt.Sprintf("192.168.0.194:%d", *port))
