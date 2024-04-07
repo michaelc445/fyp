@@ -6,7 +6,7 @@ import com.example.myapplication.data.model.LoggedInUser;
  * Class exposing authenticated user details to the UI.
  */
 class LoggedInUserView {
-    private LoggedInUser user;
+    private final LoggedInUser user;
     //... other data fields that may be accessible to the UI
 
     LoggedInUserView(LoggedInUser user) {

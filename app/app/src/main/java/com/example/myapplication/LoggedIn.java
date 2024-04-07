@@ -32,7 +32,7 @@ public class LoggedIn extends AppCompatActivity {
 
         user = (LoggedInUser) getIntent().getSerializableExtra("user");
         UserData data = new UserData();
-        data.setUser(user);
+        UserData.setUser(user);
 
         DatabaseHelper db = new DatabaseHelper(getApplicationContext());
         db.clearPosters();

@@ -42,4 +42,9 @@
         android:name="com.example.myapplication.ElectionFragment"
         android:label="UpdateElection"
         tools:layout="@layout/election_fragment" />
+    <fragment
+        android:id="@+id/nav_OutstandingPosters"
+        android:name="com.example.myapplication.OutstandingPosterFragment"
+        android:label="OutstandingPosters"
+        tools:layout="@layout/fragment_outstanding_posters" />
 </navigation>

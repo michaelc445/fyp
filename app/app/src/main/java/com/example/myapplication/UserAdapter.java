@@ -21,7 +21,7 @@ import io.grpc.ManagedChannel;
 import io.grpc.ManagedChannelBuilder;
 
 public class UserAdapter extends RecyclerView.Adapter<UserViewHolder> {
-    private List<User> users;
+    private final List<User> users;
 
     public UserAdapter(List<User> users) {
         this.users = users;

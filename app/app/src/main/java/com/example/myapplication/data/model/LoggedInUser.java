@@ -7,12 +7,12 @@ import java.io.Serializable;
  */
 public class LoggedInUser implements Serializable {
 
-    private int userId;
-    private String userName;
+    private final int userId;
+    private final String userName;
 
-    private String authKey;
-    private int partyId;
-    private String partyName;
+    private final String authKey;
+    private final int partyId;
+    private final String partyName;
 
     public LoggedInUser(int userId, String userName, String authKey,int partyId,String partyName) {
         this.userId = userId;

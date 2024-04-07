@@ -32,17 +32,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-//        ManagedChannel mChannel = ManagedChannelBuilder.forAddress("192.168.0.194",50051).usePlaintext().enableRetry().keepAliveTime(10, TimeUnit.SECONDS).build();
-//
-//        PosterAppBlockingStub bStub = PosterAppGrpc.newBlockingStub(mChannel);
-//
-//        RegisterAccountRequest r = RegisterAccountRequest.newBuilder()
-//                .setFirstName("Michael")
-//                .setLastName("john")
-//                .setUsername("hahaha")
-//                .setPassword("lolol").build();
-//        RegisterAccountResponse res = bStub.registerAccount(r);
-//        System.out.println(res);
     }
 
 

@@ -2,8 +2,8 @@ package com.example.myapplication;
 
 public class Party {
 
-    private String partyName;
-    private int partyID;
+    private final String partyName;
+    private final int partyID;
 
     public Party(String partyName, int partyID){
         this.partyID = partyID;

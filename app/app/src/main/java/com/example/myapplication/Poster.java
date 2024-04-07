@@ -1,11 +1,11 @@
 package com.example.myapplication;
 
 public class Poster {
-    private double latitude;
-    private double longitude;
-    private Integer id;
-    private boolean updated;
-    private boolean removed;
+    private final double latitude;
+    private final double longitude;
+    private final Integer id;
+    private final boolean updated;
+    private final boolean removed;
 
     public Poster(double lat, double lng, Integer id, boolean updated, boolean removed){
         this.longitude = lng;

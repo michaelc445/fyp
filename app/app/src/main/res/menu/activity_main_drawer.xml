@@ -32,5 +32,9 @@
             android:id="@+id/nav_UpdateElection"
             android:icon="@android:drawable/btn_dialog"
             android:title="Update Election" />
+        <item
+            android:id="@+id/nav_OutstandingPosters"
+            android:icon="@android:drawable/btn_dialog"
+            android:title="Outstanding Posters" />
     </group>
 </menu>

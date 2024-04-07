@@ -22,9 +22,10 @@ import io.grpc.ManagedChannelBuilder;
 
 public class PartyAdapter extends RecyclerView.Adapter<PartyViewHolder>{
 
-    private List<Party> parties;
+    private final List<Party> parties;
 
     public PartyAdapter(List<Party> parties){
+
         this.parties = parties;
     }
     @Override
