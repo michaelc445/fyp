@@ -19,7 +19,7 @@ public class UserData {
         return user;
     }
 
-    public void setUser(LoggedInUser user) {
-        this.user = user;
+    public static void setUser(LoggedInUser newUser) {
+        user = newUser;
     }
 }

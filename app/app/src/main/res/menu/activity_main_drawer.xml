@@ -16,5 +16,17 @@
             android:id="@+id/nav_RemovePoster"
             android:icon="@android:drawable/btn_dialog"
             android:title="Remove Posters" />
+        <item
+            android:id="@+id/nav_RegisterParty"
+            android:icon="@android:drawable/btn_dialog"
+            android:title="Register Party" />
+        <item
+            android:id="@+id/nav_JoinParty"
+            android:icon="@android:drawable/btn_dialog"
+            android:title="Join Party" />
+        <item
+            android:id="@+id/nav_ApproveMembers"
+            android:icon="@android:drawable/btn_dialog"
+            android:title="Approve Members" />
     </group>
 </menu>

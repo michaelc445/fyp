@@ -31,6 +31,7 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     public List<Poster> getCachedPosters() {
         SQLiteDatabase db = this.getWritableDatabase();
         ArrayList<Poster> posters = new ArrayList<>();
+
         Cursor cursor = db.query("PosterTable", new String[]{"id","lat","lng","removed"},"updateSent = false",null,null,null,null);
         for (cursor.moveToFirst(); !cursor.isAfterLast(); cursor.moveToNext()) {
             @SuppressLint("Range") double longitude = cursor.getDouble(cursor.getColumnIndex("lng"));
@@ -45,6 +46,12 @@ public class DatabaseHelper extends SQLiteOpenHelper {
     @Override
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
 
+    }
+    public void clearPosters(){
+        SQLiteDatabase db = this.getWritableDatabase();
+        db.delete("PosterTable","",null);
+
+        return;
     }
     public GeoPoint removePoster(int posterId){
         SQLiteDatabase db = this.getWritableDatabase();

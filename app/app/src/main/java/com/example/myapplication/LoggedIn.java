@@ -1,5 +1,7 @@
 package com.example.myapplication;
 
+import android.content.Context;
+import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.view.Menu;
 import android.widget.TextView;
@@ -31,6 +33,11 @@ public class LoggedIn extends AppCompatActivity {
         user = (LoggedInUser) getIntent().getSerializableExtra("user");
         UserData data = new UserData();
         data.setUser(user);
+
+        DatabaseHelper db = new DatabaseHelper(getApplicationContext());
+        db.clearPosters();
+        SharedPreferences preferences = getApplicationContext().getSharedPreferences("last_updated", Context.MODE_PRIVATE);
+        preferences.edit().putLong("last_updated",0L).apply();
 
         setSupportActionBar(binding.appBarLoggedIn.toolbar);
 //        binding.appBarLoggedIn.fab.setOnClickListener(new View.OnClickListener() {

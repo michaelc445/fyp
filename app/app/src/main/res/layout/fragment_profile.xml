@@ -4,19 +4,55 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    tools:context=".ui.home.HomeFragment">
+    app:layout_goneMarginBottom="20dp">
+
+    <androidx.constraintlayout.widget.Guideline
+        android:id="@+id/guideline_horizontal_center"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content" />
 
     <TextView
-        android:id="@+id/text_home"
-        android:layout_width="match_parent"
+        android:id="@+id/profile_username"
+        android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginStart="8dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginEnd="8dp"
-        android:textAlignment="center"
+        android:layout_marginTop="20dp"
+        android:text="Username: "
         android:textSize="20sp"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintLeft_toLeftOf="@+id/guideline_horizontal_center"
+        app:layout_constraintRight_toRightOf="@+id/guideline_horizontal_center"
         app:layout_constraintTop_toTopOf="parent" />
+
+    <TextView
+        android:id="@+id/profile_party"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:text="Party: "
+        android:textSize="20sp"
+        app:layout_constraintLeft_toLeftOf="@+id/guideline_horizontal_center"
+        app:layout_constraintRight_toRightOf="@+id/guideline_horizontal_center"
+        app:layout_constraintTop_toBottomOf="@id/profile_username" />
+
+    <TextView
+        android:id="@+id/placed_posters"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:text="Placed posters: "
+        android:textSize="20sp"
+        app:layout_constraintLeft_toLeftOf="@+id/guideline_horizontal_center"
+        app:layout_constraintRight_toRightOf="@+id/guideline_horizontal_center"
+        app:layout_constraintTop_toBottomOf="@id/profile_party" />
+
+    <TextView
+        android:id="@+id/removed_posters"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:text="Removed posters: "
+        android:textSize="20sp"
+        app:layout_constraintLeft_toLeftOf="@+id/guideline_horizontal_center"
+        app:layout_constraintRight_toRightOf="@+id/guideline_horizontal_center"
+        app:layout_constraintTop_toBottomOf="@id/placed_posters" />
+
 </androidx.constraintlayout.widget.ConstraintLayout>

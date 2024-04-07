@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="60dp">
+
+    <TextView
+        android:id="@+id/username"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:text="TextView" />
+
+    <ImageButton
+        android:id="@+id/approve"
+        android:layout_width="1dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:backgroundTint="#FDF6FE"
+        android:scaleType="fitCenter"
+        android:src="@drawable/tick_mark" />
+
+    <ImageButton
+        android:id="@+id/deny"
+        android:layout_width="1dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:backgroundTint="#FDF6FE"
+        android:scaleType="fitCenter"
+        android:src="@drawable/x_mark" />
+</LinearLayout>

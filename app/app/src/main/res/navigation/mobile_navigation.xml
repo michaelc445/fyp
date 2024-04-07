@@ -7,14 +7,14 @@
 
     <fragment
         android:id="@+id/nav_profile"
-        android:name="com.example.myapplication.MapFragmentPlacePoster"
+        android:name="com.example.myapplication.ProfileFragment"
         android:label="@string/menu_profile"
         tools:layout="@layout/fragment_profile" />
 
     <fragment
         android:id="@+id/nav_placePoster"
         android:name="com.example.myapplication.MapFragmentPlacePoster"
-        android:label="@string/menu_place_poster"
+        android:label="Place Poster"
         tools:layout="@layout/fragment_place_poster" />
 
     <fragment
@@ -22,4 +22,19 @@
         android:name="com.example.myapplication.MapFragmentRemovePoster"
         android:label="@string/menu_remove_poster"
         tools:layout="@layout/fragment_remove_poster" />
+    <fragment
+        android:id="@+id/nav_RegisterParty"
+        android:name="com.example.myapplication.RegisterPartyFragment"
+        android:label="Register Party"
+        tools:layout="@layout/fragment_register_party" />
+    <fragment
+        android:id="@+id/nav_ApproveMembers"
+        android:name="com.example.myapplication.ApproveMembersFragment"
+        android:label="Approve Members"
+        tools:layout="@layout/fragment_approve_members" />
+    <fragment
+        android:id="@+id/nav_JoinParty"
+        android:name="com.example.myapplication.JoinPartyFragment"
+        android:label="Join Party"
+        tools:layout="@layout/fragment_join_party" />
 </navigation>

@@ -38,6 +38,8 @@ public class LoggedInUser implements Serializable {
         return partyId;
     }
 
+
+
     public String getPartyName() {
         return partyName;
     }

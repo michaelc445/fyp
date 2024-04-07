@@ -256,7 +256,7 @@ public class MapFragmentPlacePoster extends Fragment {
                 }
 
             } catch(Exception e){
-                Log.e("Sending cached updates","Update failed: "+e);
+                Log.e("Sending cached updates","Update failed: "+e.getMessage());
             }
         }
     }
