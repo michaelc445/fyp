@@ -37,4 +37,9 @@
         android:name="com.example.myapplication.JoinPartyFragment"
         android:label="Join Party"
         tools:layout="@layout/fragment_join_party" />
+    <fragment
+        android:id="@+id/nav_UpdateElection"
+        android:name="com.example.myapplication.ElectionFragment"
+        android:label="UpdateElection"
+        tools:layout="@layout/election_fragment" />
 </navigation>

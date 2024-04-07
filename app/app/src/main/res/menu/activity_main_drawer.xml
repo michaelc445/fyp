@@ -28,5 +28,9 @@
             android:id="@+id/nav_ApproveMembers"
             android:icon="@android:drawable/btn_dialog"
             android:title="Approve Members" />
+        <item
+            android:id="@+id/nav_UpdateElection"
+            android:icon="@android:drawable/btn_dialog"
+            android:title="Update Election" />
     </group>
 </menu>
