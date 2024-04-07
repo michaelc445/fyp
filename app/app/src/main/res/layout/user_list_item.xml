@@ -3,28 +3,43 @@
     android:layout_width="match_parent"
     android:layout_height="60dp">
 
-    <TextView
-        android:id="@+id/username"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:text="TextView" />
+    <androidx.cardview.widget.CardView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_marginBottom="8dp"
+        android:layout_weight="1">
 
-    <ImageButton
-        android:id="@+id/approve"
-        android:layout_width="1dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:backgroundTint="#FDF6FE"
-        android:scaleType="fitCenter"
-        android:src="@drawable/tick_mark" />
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:orientation="horizontal">
 
-    <ImageButton
-        android:id="@+id/deny"
-        android:layout_width="1dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:backgroundTint="#FDF6FE"
-        android:scaleType="fitCenter"
-        android:src="@drawable/x_mark" />
+            <TextView
+                android:id="@+id/username"
+                android:layout_width="wrap_content"
+                android:layout_height="match_parent"
+                android:layout_weight="1"
+                android:gravity="center_vertical"
+                android:text="TextView" />
+
+            <ImageButton
+                android:id="@+id/approve"
+                android:layout_width="1dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:backgroundTint="#FDF6FE"
+                android:scaleType="fitCenter"
+                android:src="@drawable/tick_mark" />
+
+            <ImageButton
+                android:id="@+id/deny"
+                android:layout_width="1dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:backgroundTint="#FDF6FE"
+                android:scaleType="fitCenter"
+                android:src="@drawable/x_mark" />
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
+
 </LinearLayout>

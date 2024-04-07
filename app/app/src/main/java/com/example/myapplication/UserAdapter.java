@@ -36,7 +36,7 @@ public class UserAdapter extends RecyclerView.Adapter<UserViewHolder> {
 
     public void onBindViewHolder(UserViewHolder holder, int position) {
         User user = users.get(position);
-        holder.userNameTextView.setText(user.getFirstName()+" "+user.getLastName()+" "+user.getUserID());
+        holder.userNameTextView.setText(user.getFirstName()+" "+user.getLastName());
         holder.approveButton.setOnClickListener(v -> {
             User t = users.get(holder.getAdapterPosition());
             try{

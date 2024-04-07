@@ -55,7 +55,14 @@ public class LoggedIn extends AppCompatActivity {
         // Passing each menu ID as a set of Ids because each
         // menu should be considered as top level destinations.
         mAppBarConfiguration = new AppBarConfiguration.Builder(
-                R.id.nav_profile, R.id.nav_placePoster, R.id.nav_RemovePoster)
+                R.id.nav_profile,
+                R.id.nav_placePoster,
+                R.id.nav_RemovePoster,
+                R.id.nav_RegisterParty,
+                R.id.nav_JoinParty,
+                R.id.nav_ApproveMembers,
+                R.id.nav_UpdateElection,
+                R.id.nav_OutstandingPosters)
                 .setOpenableLayout(drawer)
                 .build();
 
