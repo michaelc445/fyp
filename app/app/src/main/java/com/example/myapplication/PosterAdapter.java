@@ -30,7 +30,7 @@ public class PosterAdapter extends RecyclerView.Adapter<PosterViewHolder>{
         holder.posterIdTextView.setText("Poster ID: "+poster.getPosterId());
         holder.usernameTextView.setText("Username: "+poster.getUsername());
         holder.firstLastTextView.setText("Full Name: "+poster.getFirstName()+" "+poster.getLastName());
-        holder.timeToRemovalTextView.setText("Remaining time: "+Duration.between(LocalDateTime.now(),poster.getRemovalDate()).toDays()+" days");
+        holder.timeToRemovalTextView.setText("Remaining time: "+(Duration.between(LocalDateTime.now(),poster.getRemovalDate()).toDays()+7)+" days");
 
     }
 
