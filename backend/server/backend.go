@@ -137,7 +137,7 @@ func (s *server) OutstandingPosters(ctx context.Context, in *pb.PosterTimeReques
 		return &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to read election date from query: %v", err)
 	}
 	rows.Close()
-	return &pb.PosterTimeResponse{Code: pb.ResponseCode_OK, Posters: posters, RemovalDate: timestamppb.New(time.UnixMilli(electionDate))}, nil
+	return &pb.PosterTimeResponse{Code: pb.ResponseCode_OK, Posters: posters, RemovalDate: timestamppb.New(time.Unix(electionDate, 0))}, nil
 }
 func (s *server) NewElection(ctx context.Context, in *pb.CreateElectionRequest) (*pb.CreateElectionResponse, error) {
 	if in.GetAuthKey() == "" {
