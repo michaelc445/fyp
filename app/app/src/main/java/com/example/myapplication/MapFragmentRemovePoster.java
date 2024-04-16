@@ -10,6 +10,7 @@ import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.Bundle;
+import android.os.Looper;
 import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.View;
@@ -23,6 +24,11 @@ import androidx.core.app.ActivityCompat;
 import androidx.fragment.app.Fragment;
 
 import com.example.myapplication.data.model.LoggedInUser;
+import com.google.android.gms.location.FusedLocationProviderClient;
+import com.google.android.gms.location.LocationCallback;
+import com.google.android.gms.location.LocationRequest;
+import com.google.android.gms.location.LocationResult;
+import com.google.android.gms.location.LocationServices;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.protobuf.Timestamp;
 import com.michaelc445.messages.Location;
@@ -56,8 +62,10 @@ public class MapFragmentRemovePoster extends Fragment {
     private MapView mapView;
     private LocationManager locationManager;
     private android.location.Location lastKnownLocation;
+    private FusedLocationProviderClient fusedClient;
 
-//    private Marker userMarker;
+
+
 
 
     @Nullable
@@ -75,6 +83,33 @@ public class MapFragmentRemovePoster extends Fragment {
         // Enable pinch zooming
         mapView.setMultiTouchControls(true);
 
+        //*** code for location updates came from https://stackoverflow.com/a/64012564 ***//
+        fusedClient = LocationServices.getFusedLocationProviderClient(getContext());
+
+        if (ActivityCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED
+                && ActivityCompat.checkSelfPermission(getContext(), Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 1);
+            ActivityCompat.requestPermissions(getActivity(), new String[]{Manifest.permission.ACCESS_COARSE_LOCATION}, 2);
+        }
+
+        LocationRequest locationRequest = LocationRequest.create();
+        locationRequest.setInterval(1000);
+        locationRequest.setFastestInterval(900);
+        locationRequest.setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY);
+
+        LocationCallback locationCallback = new LocationCallback() {
+            @Override
+            public void onLocationResult(@NonNull LocationResult locationResult) {
+                super.onLocationResult(locationResult);
+                if (locationResult == null){
+                    return;
+                }
+                for (android.location.Location location: locationResult.getLocations()){
+                    lastKnownLocation = location;
+                }
+            }
+        };
+        fusedClient.requestLocationUpdates(locationRequest,locationCallback, Looper.getMainLooper());
         DatabaseHelper db = new DatabaseHelper(getContext());
         ArrayList<Poster> posters = db.getPosters();
 
@@ -92,13 +127,19 @@ public class MapFragmentRemovePoster extends Fragment {
         removePosterButton.setText("Remove Poster");
 
         removePosterButton.setOnClickListener(v -> {
-            android.location.Location location = getLocation();
+
+            if (lastKnownLocation == null){
+                Toast.makeText(getContext(),"Failed to read location data",Toast.LENGTH_SHORT).show();
+                return;
+            }
             LoggedInUser  user = UserData.getUser();
             ManagedChannel mChannel = ManagedChannelBuilder.forAddress(Data.getAddress(),Data.getPort()).usePlaintext().enableRetry().keepAliveTime(10, TimeUnit.SECONDS).build();
             PosterAppGrpc.PosterAppBlockingStub bStub = PosterAppGrpc.newBlockingStub(mChannel);
             RemovePosterRequest req = RemovePosterRequest.newBuilder()
                     .setAuthKey(user.getAuthKey())
-                    .setLocation(Location.newBuilder().setLng(location.getLongitude()).setLat(location.getLatitude()).build())
+                    .setLocation(Location.newBuilder()
+                            .setLng(lastKnownLocation.getLongitude())
+                            .setLat(lastKnownLocation.getLatitude()).build())
                     .setUserId(user.getUserId())
                     .setPartyId(user.getPartyId()).build();
 
@@ -147,12 +188,7 @@ public class MapFragmentRemovePoster extends Fragment {
         } else {
             // Permissions already granted, update map with user's location
             updateMapWithLocation();
-//            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 30000, 10, (location) -> {
-//                // Update map marker with new location
-//                updateMapMarker(location);
-//            });
         }
-
         return rootView;
     }
     public void removePosterFromMap(GeoPoint p){
@@ -169,6 +205,7 @@ public class MapFragmentRemovePoster extends Fragment {
             Overlay m = it.next();
             if (m instanceof  Marker){
                 Marker t = (Marker) m;
+
                 GeoPoint markerPosition = t.getPosition();
                 if (markerPosition == null){
                     continue;
@@ -178,10 +215,12 @@ public class MapFragmentRemovePoster extends Fragment {
                     mapView.invalidate();
                     return;
                 }
+
             }
 
 
         }
+
     }
     private boolean isNetworkAvailable() {
         ConnectivityManager connectivityManager
@@ -311,20 +350,22 @@ public class MapFragmentRemovePoster extends Fragment {
         return bestLocation;
     }
     private void updateMapWithLocation() {
-        // Get last known location
-        android.location.Location l = getLocation();
-        if (l != null && mapView != null){
-            GeoPoint geoL = new GeoPoint(l.getLatitude(), l.getLongitude());
+        if (lastKnownLocation == null){
+            lastKnownLocation = getLocation();
+        }
+        if (lastKnownLocation != null && mapView != null){
+            GeoPoint geoL = new GeoPoint(lastKnownLocation.getLatitude(), lastKnownLocation.getLongitude());
             mapView.getController().animateTo(geoL);
             mapView.getController().setCenter(geoL);
             mapView.getController().setZoom(18.0); // Set a more appropriate zoom level
+
             mapView.invalidate();
         }
     }
 
-//    private void updateMapMarker(android.location.Location location) {
-//        if (location != null && mapView != null) {
-//            GeoPoint userLocation = new GeoPoint(location.getLatitude(), location.getLongitude());
+//    private void updateMapMarker() {
+//        if (lastKnownLocation != null && mapView != null) {
+//            GeoPoint userLocation = new GeoPoint(lastKnownLocation.getLatitude(), lastKnownLocation.getLongitude());
 //            if (userMarker != null) {
 //                // Update existing marker position
 //                userMarker.setPosition(userLocation);
@@ -332,6 +373,7 @@ public class MapFragmentRemovePoster extends Fragment {
 //            } else {
 //                // Create and add a new marker for user location
 //                userMarker = new Marker(mapView);
+//                userMarker.setIcon(getResources().getDrawable(R.drawable.avatar));
 //                userMarker.setPosition(userLocation);
 //                // Set a custom marker icon or other properties as needed
 //                userMarker.setIcon(getResources().getDrawable(org.osmdroid.library.R.drawable.marker_default));
