@@ -24,7 +24,7 @@ jobs:
         restore-keys: go-dependencies-${{ runner.os }}-
 
     - name: download proto
-      run: sudo apt install protobuf-compiler; go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28; go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2; export PATH="$PATH:$(go env GOPATH)/bin"; chmod +x backend/compile.sh; cd backend; ./compile.sh; cd proto; go mod init github.com/michaelc445/proto; go mod tidy;cd ..;
+      run: sudo apt install protobuf-compiler; go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.28; go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.2; export PATH="$PATH:$(go env GOPATH)/bin"; chmod +x backend/compile.sh; cd backend; ./compile.sh; cd proto; go mod init github.com/michaelc445/proto; go mod tidy;go work use;cd ..;
       
     - name: Set up Go
       uses: actions/setup-go@v4
