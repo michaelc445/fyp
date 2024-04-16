@@ -1,0 +1,222 @@
+
+
+syntax = "proto3";
+
+package PosterProto;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/michaelc445/proto;proto";
+
+option java_multiple_files = true;
+option java_package = "com.michaelc445.messages";
+option java_outer_classname = "MessagesProto";
+
+enum ResponseCode {
+    OK = 0;
+    FAILED = 1;
+}
+
+
+
+message Location{
+    double lat = 1;
+    double lng = 2;
+}
+
+
+message Poster {
+    int32 placedBy = 1;
+    int32 party = 2;
+    int32 posterid = 3;
+    Location location = 4;
+    bool removed = 5;
+}
+
+message LoginRequest {
+    string username = 1;
+    string password = 2;
+}
+
+message LoginResponse{
+    string authKey = 1;
+    ResponseCode code = 2;
+    string party = 3;
+    int32 userId = 4;
+    int32 partyId = 5;
+}
+
+message PlacementRequest {
+    int32 userId = 1;
+    string authKey = 2;
+    int32 partyId = 3;
+    Location location = 4;
+}
+
+message PlacementResponse {
+    ResponseCode code = 1;
+    int32 posterId = 2;
+}
+
+message RemovePosterRequest {
+    int32 userId = 1;
+    string authKey = 2;
+    Location location = 3;
+    int32 partyId = 4;
+}
+
+message RemovePosterResponse {
+    ResponseCode code = 1;
+    int32 posterid = 2;
+}
+
+message UpdateRequest {
+    string authKey = 1;
+    int32 userId = 2;
+    int32 partyid = 3;
+    google.protobuf.Timestamp lastUpdated = 4;
+}
+
+message UpdateResponse {
+    ResponseCode code = 1;
+    repeated Poster posters = 2;
+}
+
+message RegisterAccountRequest {
+    string username = 1;
+    string password = 2;
+    string firstName = 3;
+    string lastName = 4;
+}
+
+message RegisterAccountResponse{
+    ResponseCode code = 1;
+}
+
+message RegisterPartyRequest{
+    string partyName = 1;
+    string authKey = 2;
+    int32 userId = 3;
+}
+
+message RegisterPartyResponse{
+    ResponseCode code = 1;
+    int32 partyId = 2;
+    string authKey = 3;
+}
+
+message JoinPartyRequest{
+    int32 userId = 1;
+    string authKey = 2;
+    int32 partyId = 3;
+}
+
+message JoinPartyResponse{
+    ResponseCode code = 1;
+}
+
+message RetrieveJoinRequest{
+    int32 userId = 1;
+    string authKey = 2;
+    int32 partyId = 3;
+}
+
+message RetrieveJoinResponse{
+    repeated Member members = 1;
+    ResponseCode code = 2;
+}
+
+message Member {
+    int32 userId = 1;
+    string firstName = 2;
+    string lastName = 3;
+}
+message ProfileRequest{
+    string authKey = 1;
+    int32 userId = 2;
+    int32 partyId = 3;
+}
+
+message ProfileResponse{
+    int32 placedPosters = 1;
+    int32 removedPosters = 2;
+    string partyName = 3;
+    ResponseCode code = 4;
+}
+
+message ApproveMemberRequest{
+    string authKey = 1;
+    repeated Member approvedMembers = 2;
+    repeated Member deniedMembers = 3;
+    int32 userId = 4;
+    int32 partyId = 5;
+}
+
+
+message ApproveMemberResponse{
+    ResponseCode code = 1;
+}
+
+message RetrievePartiesRequest{
+    string authKey = 1;
+}
+
+message RetrievePartiesResponse{
+    repeated Party parties = 1;
+    ResponseCode code = 2;
+}
+
+message Party{
+    string name = 1;
+    int32 partyID = 2;
+}
+// each party will only have 1 election active at any time
+// elections are all held on the same day
+// let parties create their own elections rather than site admin managing when elections happen
+message CreateElectionRequest{
+    string authKey = 1;
+    int32 partyId = 2;
+    int32 userId = 3;
+    // day voting happens. posters must be removed 7 days after this date
+    google.protobuf.Timestamp electionDate = 5;
+    // day posters are legally allowed to be placed from
+    google.protobuf.Timestamp startDate = 6;
+}
+message CreateElectionResponse{
+    ResponseCode code = 1;
+}
+
+message PosterTimeRequest{
+    string authKey = 1;
+    int32 userId = 2;
+    int32 partyId = 3;
+}
+message PosterTimeResponse{
+    ResponseCode code = 1;
+    repeated PosterUser posters = 2;
+    google.protobuf.Timestamp removalDate = 3;
+}
+
+message PosterUser{
+    Poster poster = 1;
+    string username =2;
+    string firstName = 3;
+    string lastName = 4;
+    google.protobuf.Timestamp created = 5;
+}
+
+service PosterApp {
+    rpc PlacePoster (PlacementRequest) returns (PlacementResponse){}
+    rpc RemovePoster (RemovePosterRequest) returns (RemovePosterResponse){}
+    rpc RegisterAccount (RegisterAccountRequest) returns (RegisterAccountResponse){}
+    rpc LoginAccount(LoginRequest)returns (LoginResponse){}
+    rpc RegisterParty (RegisterPartyRequest) returns (RegisterPartyResponse){}
+    rpc JoinParty(JoinPartyRequest) returns (JoinPartyResponse){}
+    rpc RetrieveJoinRequests (RetrieveJoinRequest) returns (RetrieveJoinResponse){}
+    rpc RetrieveUpdates(UpdateRequest) returns (UpdateResponse){}
+    rpc ApproveMembers(ApproveMemberRequest) returns (ApproveMemberResponse){}
+    rpc RetrieveParties(RetrievePartiesRequest) returns (RetrievePartiesResponse){}
+    rpc RetrieveProfileStats(ProfileRequest) returns (ProfileResponse){}
+    rpc NewElection(CreateElectionRequest) returns (CreateElectionResponse){}
+    rpc OutstandingPosters(PosterTimeRequest) returns (PosterTimeResponse){}
+}
