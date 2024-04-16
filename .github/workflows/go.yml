@@ -34,7 +34,7 @@ jobs:
 
 
     - name: Build
-      run: go work init backend/server;go work use;go build -C ./backend/server
+      run: go build -C ./backend/server
 
     - name: Test
       run: go test -C ./backend/server
