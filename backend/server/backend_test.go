@@ -342,6 +342,7 @@ func TestApproveMembers(t *testing.T) {
 		deniedMembers   []*pb.Member
 		adminRows       *sqlmock.Rows
 		wantErr         bool
+		joinReq         bool
 		wantCode        pb.ResponseCode
 	}{
 		{
@@ -349,6 +350,7 @@ func TestApproveMembers(t *testing.T) {
 			userId:    0,
 			partyId:   1,
 			wantCode:  pb.ResponseCode_FAILED,
+			joinReq:   true,
 			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 0),
 			wantErr:   true,
 		},
@@ -356,6 +358,7 @@ func TestApproveMembers(t *testing.T) {
 			name:      "partyId not set",
 			userId:    1,
 			partyId:   0,
+			joinReq:   true,
 			wantCode:  pb.ResponseCode_FAILED,
 			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
 			wantErr:   true,
@@ -364,14 +367,28 @@ func TestApproveMembers(t *testing.T) {
 			name:      "user is not admin of party",
 			userId:    1,
 			partyId:   1,
+			joinReq:   true,
 			wantCode:  pb.ResponseCode_FAILED,
 			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
 			wantErr:   true,
 		},
 		{
+			name:      "no join request from user",
+			userId:    1,
+			partyId:   3,
+			joinReq:   false,
+			wantCode:  pb.ResponseCode_FAILED,
+			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			approvedMembers: []*pb.Member{
+				{UserId: 2, FirstName: "john", LastName: "murphy"},
+			},
+			wantErr: true,
+		},
+		{
 			name:      "approve members",
 			userId:    1,
 			partyId:   3,
+			joinReq:   true,
 			wantCode:  pb.ResponseCode_OK,
 			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
 			approvedMembers: []*pb.Member{
@@ -385,6 +402,7 @@ func TestApproveMembers(t *testing.T) {
 			name:      "deny members",
 			userId:    1,
 			partyId:   1,
+			joinReq:   true,
 			wantCode:  pb.ResponseCode_OK,
 			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
 			deniedMembers: []*pb.Member{
@@ -398,6 +416,7 @@ func TestApproveMembers(t *testing.T) {
 			name:      "approve and deny members",
 			userId:    3,
 			partyId:   1,
+			joinReq:   true,
 			wantCode:  pb.ResponseCode_OK,
 			adminRows: sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
 			approvedMembers: []*pb.Member{
@@ -429,9 +448,16 @@ func TestApproveMembers(t *testing.T) {
 			mock.ExpectQuery("select").WithArgs(tc.partyId, tc.userId).WillReturnRows(tc.adminRows)
 
 			for _, member := range tc.approvedMembers {
-				mock.ExpectQuery("select").
-					WithArgs(member.GetUserId(), tc.partyId).
-					WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+				if tc.joinReq {
+					mock.ExpectQuery("select").
+						WithArgs(member.GetUserId(), tc.partyId).
+						WillReturnRows(sqlmock.NewRows([]string{"id"}).AddRow(1))
+				} else {
+					mock.ExpectQuery("select").
+						WithArgs(member.GetUserId(), tc.partyId).
+						WillReturnRows(sqlmock.NewRows([]string{"id"}))
+
+				}
 				mock.ExpectExec("update fyp_schema.users").WithArgs(tc.partyId, member.GetUserId()).WillReturnResult(sqlmock.NewResult(1, 1))
 				mock.ExpectExec("update fyp_schema.posters").WithArgs(tc.partyId, member.GetUserId()).WillReturnResult(sqlmock.NewResult(1, 1))
 				mock.ExpectExec("update fyp_schema.joinRequests").WithArgs(member.GetUserId(), tc.partyId).WillReturnResult(sqlmock.NewResult(1, 1))
@@ -588,7 +614,7 @@ func TestJoinParty(t *testing.T) {
 		name                  string
 		userId                int32
 		partyId               int32
-		userAdminRows         *sqlmock.Rows
+		userMemberRows        *sqlmock.Rows
 		joinRequestExistsRows *sqlmock.Rows
 		partyExistsRows       *sqlmock.Rows
 		joinRequestResult     driver.Result
@@ -600,7 +626,7 @@ func TestJoinParty(t *testing.T) {
 			name:                  "userId not set",
 			userId:                0,
 			partyId:               1,
-			userAdminRows:         sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			userMemberRows:        sqlmock.NewRows([]string{"userID", "partyID"}),
 			partyExistsRows:       sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 23),
 			joinRequestExistsRows: sqlmock.NewRows([]string{"userID", "partyID", "reviewed"}),
 			joinRequestResult:     sqlmock.NewResult(2, 1),
@@ -611,7 +637,7 @@ func TestJoinParty(t *testing.T) {
 			name:                  "partyId not set",
 			userId:                1,
 			partyId:               0,
-			userAdminRows:         sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			userMemberRows:        sqlmock.NewRows([]string{"userID", "partyID"}),
 			partyExistsRows:       sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 23),
 			joinRequestExistsRows: sqlmock.NewRows([]string{"userID", "partyID", "reviewed"}),
 			joinRequestResult:     sqlmock.NewResult(2, 1),
@@ -619,10 +645,10 @@ func TestJoinParty(t *testing.T) {
 			wantErr:               true,
 		},
 		{
-			name:                  "user is admin of party",
+			name:                  "user is a member of a party",
 			userId:                1,
-			partyId:               1,
-			userAdminRows:         sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
+			partyId:               2,
+			userMemberRows:        sqlmock.NewRows([]string{"userID", "partyID"}).AddRow(1, 2),
 			partyExistsRows:       sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
 			joinRequestExistsRows: sqlmock.NewRows([]string{"userID", "partyID", "reviewed"}),
 			joinRequestResult:     sqlmock.NewResult(2, 1),
@@ -633,7 +659,7 @@ func TestJoinParty(t *testing.T) {
 			name:                  "party does not exist",
 			userId:                1,
 			partyId:               1,
-			userAdminRows:         sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			userMemberRows:        sqlmock.NewRows([]string{"userID", "partyID"}),
 			partyExistsRows:       sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
 			joinRequestExistsRows: sqlmock.NewRows([]string{"userID", "partyID", "reviewed"}),
 			joinRequestResult:     sqlmock.NewResult(2, 1),
@@ -644,7 +670,7 @@ func TestJoinParty(t *testing.T) {
 			name:                  "join request already exists",
 			userId:                1,
 			partyId:               1,
-			userAdminRows:         sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			userMemberRows:        sqlmock.NewRows([]string{"userID", "partyID"}),
 			partyExistsRows:       sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 1),
 			joinRequestExistsRows: sqlmock.NewRows([]string{"userID", "partyID", "reviewed"}).AddRow(1, 1, 0),
 			joinRequestResult:     sqlmock.NewResult(2, 1),
@@ -655,7 +681,7 @@ func TestJoinParty(t *testing.T) {
 			name:                  "success",
 			userId:                2,
 			partyId:               1,
-			userAdminRows:         sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			userMemberRows:        sqlmock.NewRows([]string{"userID", "partyID"}),
 			partyExistsRows:       sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(1, "fake_party", 23),
 			joinRequestExistsRows: sqlmock.NewRows([]string{"userID", "partyID", "reviewed"}),
 			joinRequestResult:     sqlmock.NewResult(2, 1),
@@ -676,7 +702,7 @@ func TestJoinParty(t *testing.T) {
 			server := &server{DB: db}
 
 			mock.ExpectQuery("select").WithArgs(tc.partyId).WillReturnRows(tc.partyExistsRows)
-			mock.ExpectQuery("select").WithArgs(tc.userId).WillReturnRows(tc.userAdminRows)
+			mock.ExpectQuery("select").WithArgs(tc.userId).WillReturnRows(tc.userMemberRows)
 			mock.ExpectQuery("select").WithArgs(tc.userId, tc.partyId).WillReturnRows(tc.joinRequestExistsRows)
 
 			mock.ExpectBegin()
@@ -718,7 +744,7 @@ func TestRegisterParty(t *testing.T) {
 		partyId           int32
 		newPartyId        int32
 		partyName         string
-		userAdminRows     *sqlmock.Rows
+		userMemberRows    *sqlmock.Rows
 		partyExistsRows   *sqlmock.Rows
 		updateUserResult  driver.Result
 		createPartyResult driver.Result
@@ -733,7 +759,7 @@ func TestRegisterParty(t *testing.T) {
 			partyId:           1,
 			newPartyId:        2,
 			partyName:         "",
-			userAdminRows:     sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			userMemberRows:    sqlmock.NewRows([]string{"userID", "partyID"}),
 			partyExistsRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
 			updateUserResult:  sqlmock.NewResult(0, 1),
 			createPartyResult: sqlmock.NewResult(2, 1),
@@ -746,7 +772,7 @@ func TestRegisterParty(t *testing.T) {
 			partyId:           1,
 			newPartyId:        2,
 			partyName:         "hello",
-			userAdminRows:     sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			userMemberRows:    sqlmock.NewRows([]string{"userID", "partyID"}),
 			partyExistsRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
 			updateUserResult:  sqlmock.NewResult(0, 1),
 			createPartyResult: sqlmock.NewResult(2, 1),
@@ -754,12 +780,12 @@ func TestRegisterParty(t *testing.T) {
 			wantErr:           true,
 		},
 		{
-			name:              "user is admin  of party",
+			name:              "user is member of a party",
 			userId:            1,
 			partyId:           1,
 			newPartyId:        2,
 			partyName:         "new_party",
-			userAdminRows:     sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(2, "haha", 1),
+			userMemberRows:    sqlmock.NewRows([]string{"userID", "partyID"}).AddRow(1, 1),
 			partyExistsRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
 			updateUserResult:  sqlmock.NewResult(0, 0),
 			createPartyResult: sqlmock.NewResult(0, 0),
@@ -772,7 +798,7 @@ func TestRegisterParty(t *testing.T) {
 			partyId:           1,
 			newPartyId:        2,
 			partyName:         "new_party",
-			userAdminRows:     sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			userMemberRows:    sqlmock.NewRows([]string{"userID", "partyID"}),
 			partyExistsRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}).AddRow(2, "haha", 1),
 			updateUserResult:  sqlmock.NewResult(0, 0),
 			createPartyResult: sqlmock.NewResult(0, 0),
@@ -785,7 +811,7 @@ func TestRegisterParty(t *testing.T) {
 			partyId:           1,
 			newPartyId:        2,
 			partyName:         "new party",
-			userAdminRows:     sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
+			userMemberRows:    sqlmock.NewRows([]string{"userID", "partyID"}),
 			partyExistsRows:   sqlmock.NewRows([]string{"partyID ", "partyName", "admin"}),
 			updateUserResult:  sqlmock.NewResult(2, 1),
 			createPartyResult: sqlmock.NewResult(2, 1),
@@ -806,7 +832,7 @@ func TestRegisterParty(t *testing.T) {
 			server := &server{DB: db}
 			mock.ExpectBegin()
 
-			mock.ExpectQuery("select").WithArgs(tc.partyId, tc.userId).WillReturnRows(tc.userAdminRows)
+			mock.ExpectQuery("select").WithArgs(tc.userId).WillReturnRows(tc.userMemberRows)
 			mock.ExpectQuery("select").WithArgs(tc.partyName).WillReturnRows(tc.partyExistsRows)
 			mock.ExpectExec("insert").WithArgs(tc.partyName, tc.userId).WillReturnResult(tc.createPartyResult)
 			mock.ExpectExec("update").WithArgs(tc.newPartyId, tc.userId).WillReturnResult(tc.updateUserResult)
@@ -867,17 +893,6 @@ func TestRemovePoster(t *testing.T) {
 			posterId:     1,
 			wantPosterId: 0,
 			returnRows:   sqlmock.NewRows([]string{"posterId", "distance"}),
-			wantCode:     pb.ResponseCode_FAILED,
-			wantErr:      true,
-		},
-		{
-			name:         "poster does not belong to party",
-			userId:       1,
-			partyId:      1,
-			location:     &pb.Location{Lat: 1, Lng: 1},
-			posterId:     1,
-			wantPosterId: 0,
-			returnRows:   sqlmock.NewRows([]string{"posterId", "distance"}).AddRow(2, 1),
 			wantCode:     pb.ResponseCode_FAILED,
 			wantErr:      true,
 		},
@@ -1204,6 +1219,14 @@ func TestLoginAccount(t *testing.T) {
 			wantCode:    pb.ResponseCode_FAILED,
 		},
 		{
+			name:        "incorrect password",
+			username:    "test_username",
+			password:    "test_password",
+			loginResult: sqlmock.NewRows([]string{"userID", "partyID", "username", "pwhash", "partyName"}).AddRow(1, 1, "test_username", "not a pwhash", "party"),
+			wantErr:     true,
+			wantCode:    pb.ResponseCode_FAILED,
+		},
+		{
 			name:        "success",
 			username:    "test_username",
 			password:    "fakePassword",
@@ -1241,7 +1264,7 @@ func TestLoginAccount(t *testing.T) {
 	}
 }
 
-func Test_RetrieveUpdates(t *testing.T) {
+func TestRetrieveUpdates(t *testing.T) {
 
 	tests := []struct {
 		name         string
@@ -1348,7 +1371,7 @@ func Test_RetrieveUpdates(t *testing.T) {
 	}
 }
 
-func Test_RetrieveParties(t *testing.T) {
+func TestRetrieveParties(t *testing.T) {
 	tests := []struct {
 		name        string
 		userId      int32

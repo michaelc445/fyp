@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	removePosterMaxDistance = 100
+	removePosterMaxDistance = 30
 	port                    = flag.Int("port", 50051, "The server port")
 	placePosterQuery        = "insert into fyp_schema.posters (partyId, userId, created,updated,location) values (?,?,NOW(),NOW(),point(?,?))"
 	checkPosterQuery        = "select partyId, posterId from fyp_schema.posters where posterId = ?"
@@ -156,7 +156,6 @@ func (s *server) NewElection(ctx context.Context, in *pb.CreateElectionRequest) 
 	if !verifyClaims(userClaims, in.GetUserId(), in.GetPartyId()) {
 		return &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey does not match supplied id's. Please login again")
 	}
-
 	// check the user is admin
 	rows, err := s.DB.Query("select * from fyp_schema.parties where partyID = ? and admin = ?", in.GetPartyId(), in.GetUserId())
 
@@ -269,7 +268,6 @@ func (s *server) ApproveMembers(ctx context.Context, in *pb.ApproveMemberRequest
 			// no join request from this user
 			if !rows.Next() {
 				_ = tx.Rollback()
-				fmt.Printf("failed approve request for user: %d\n", member.GetUserId())
 				return &pb.ApproveMemberResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("no join request from this user: %s %s", member.GetFirstName(), member.GetLastName())
 			}
 			err = rows.Close()
@@ -376,14 +374,14 @@ func (s *server) JoinParty(ctx context.Context, in *pb.JoinPartyRequest) (*pb.Jo
 		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("party does not exist")
 	}
 	_ = rows.Close()
-	// check user is not already admin of a party
-	rows, err = s.DB.Query("select * from fyp_schema.parties where admin = ?", in.GetUserId())
+	// check user is not already a member of a party
+	rows, err = s.DB.Query("select userID, partyID from fyp_schema.users where userID = ? and partyId > 1", in.GetUserId())
 	if err != nil {
 		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to query party table: %v", err)
 	}
 	// should have no rows in response
 	if rows.Next() {
-		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("can not join party while you are admin of a party")
+		return &pb.JoinPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("can not join party while you are a member of a party")
 	}
 	_ = rows.Close()
 	//check that user has not already requested to join party
@@ -438,14 +436,14 @@ func (s *server) RegisterParty(ctx context.Context, in *pb.RegisterPartyRequest)
 		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to start transaction %v", err)
 	}
 
-	// check if user is admin of a party (can't create new party if you are an admin of a party)
-	res, err := tx.Query("select * from fyp_schema.parties where partyID = ? and admin = ?", userClaims.PartyId, in.GetUserId())
+	// check if user is a member of a party (can't create new party if you are a member of a party)
+	res, err := tx.Query("select userID, partyID from fyp_schema.users where userId = ? and partyId > 1", in.GetUserId())
 	if err != nil {
 		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to lookup users party: %v", err)
 	}
 	// there should be no rows returned
 	if res.Next() {
-		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("can't register new party while you are admin of a party")
+		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("can't register new party while you are a member of a party")
 	}
 	_ = res.Close()
 	// check if party exists
@@ -524,7 +522,6 @@ func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.
 	if err != nil {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to get posterId from query: %v", err)
 	}
-
 	return &pb.PlacementResponse{Code: pb.ResponseCode_OK, PosterId: int32(id)}, nil
 }
 func (s *server) RemovePoster(ctx context.Context, in *pb.RemovePosterRequest) (*pb.RemovePosterResponse, error) {
@@ -713,7 +710,6 @@ func (s *server) RetrieveUpdates(ctx context.Context, in *pb.UpdateRequest) (*pb
 		}
 		posters = append(posters, &pb.Poster{PlacedBy: poster.UserID, Party: poster.PartyId, Posterid: poster.PosterId, Location: &poster.location, Removed: t})
 	}
-	fmt.Printf("updates from: %v\nnumber of updates: %v\n", in.GetLastUpdated().AsTime(), len(posters))
 	return &pb.UpdateResponse{Posters: posters, Code: pb.ResponseCode_OK}, nil
 }
 func (s *server) RetrieveParties(ctx context.Context, in *pb.RetrievePartiesRequest) (*pb.RetrievePartiesResponse, error) {
@@ -726,7 +722,7 @@ func (s *server) RetrieveParties(ctx context.Context, in *pb.RetrievePartiesRequ
 		return &pb.RetrievePartiesResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authKey is invalid. please login again")
 	}
 
-	rows, err := s.DB.Query("select partyID, partyName from fyp_schema.parties")
+	rows, err := s.DB.Query("select partyID, partyName from fyp_schema.parties where partyID > 1")
 	if err != nil {
 		return &pb.RetrievePartiesResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("failed to retrieve party list from database %v", err)
 	}
