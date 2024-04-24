@@ -86,6 +86,7 @@ func verifyClaims(claims *tokenService.UserClaims, userId int32, partyId int32) 
 	return true
 }
 
+// OutstandingPosters retrieves information about poster which have not yet been removed and the date by which they must be removed.
 func (s *server) OutstandingPosters(ctx context.Context, in *pb.PosterTimeRequest) (*pb.PosterTimeResponse, error) {
 	if in.GetAuthKey() == "" {
 		return &pb.PosterTimeResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authkey not set")
@@ -139,6 +140,8 @@ func (s *server) OutstandingPosters(ctx context.Context, in *pb.PosterTimeReques
 	rows.Close()
 	return &pb.PosterTimeResponse{Code: pb.ResponseCode_OK, Posters: posters, RemovalDate: timestamppb.New(time.Unix(electionDate, 0))}, nil
 }
+
+// NewElection updates the current election dates for a party
 func (s *server) NewElection(ctx context.Context, in *pb.CreateElectionRequest) (*pb.CreateElectionResponse, error) {
 	if in.GetAuthKey() == "" {
 		return &pb.CreateElectionResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("authkey not set")
@@ -183,6 +186,8 @@ func (s *server) NewElection(ctx context.Context, in *pb.CreateElectionRequest) 
 
 	return &pb.CreateElectionResponse{Code: pb.ResponseCode_OK}, nil
 }
+
+// RetrieveProfileStats retrieves information about a given user.
 func (s *server) RetrieveProfileStats(ctx context.Context, in *pb.ProfileRequest) (*pb.ProfileResponse, error) {
 
 	if in.GetPartyId() == 0 {
@@ -223,6 +228,8 @@ func (s *server) RetrieveProfileStats(ctx context.Context, in *pb.ProfileRequest
 
 	return &pb.ProfileResponse{Code: pb.ResponseCode_OK, PlacedPosters: int32(placed), RemovedPosters: int32(removed), PartyName: partyName}, nil
 }
+
+// ApproveMembers will approve or deny members from joining a party.
 func (s *server) ApproveMembers(ctx context.Context, in *pb.ApproveMemberRequest) (*pb.ApproveMemberResponse, error) {
 	if in.GetPartyId() == 0 {
 		return &pb.ApproveMemberResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("partyId not set")
@@ -308,6 +315,8 @@ func (s *server) ApproveMembers(ctx context.Context, in *pb.ApproveMemberRequest
 	_ = tx.Commit()
 	return &pb.ApproveMemberResponse{Code: pb.ResponseCode_OK}, nil
 }
+
+// RetrieveJoinRequests will return a list of outstanding join requests for a party.
 func (s *server) RetrieveJoinRequests(ctx context.Context, in *pb.RetrieveJoinRequest) (*pb.RetrieveJoinResponse, error) {
 
 	if in.GetPartyId() == 0 {
@@ -349,6 +358,8 @@ func (s *server) RetrieveJoinRequests(ctx context.Context, in *pb.RetrieveJoinRe
 	_ = rows.Close()
 	return &pb.RetrieveJoinResponse{Code: pb.ResponseCode_OK, Members: memberList}, nil
 }
+
+// JoinParty will add a user to a specific party.
 func (s *server) JoinParty(ctx context.Context, in *pb.JoinPartyRequest) (*pb.JoinPartyResponse, error) {
 
 	if in.UserId == 0 {
@@ -415,6 +426,8 @@ func (s *server) JoinParty(ctx context.Context, in *pb.JoinPartyRequest) (*pb.Jo
 	_ = tx.Commit()
 	return &pb.JoinPartyResponse{Code: pb.ResponseCode_OK}, nil
 }
+
+// RegisterParty will allow a user to create a new party with the user as party admin
 func (s *server) RegisterParty(ctx context.Context, in *pb.RegisterPartyRequest) (*pb.RegisterPartyResponse, error) {
 	if in.PartyName == "" {
 		return &pb.RegisterPartyResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("party name can not be empty")
@@ -492,6 +505,8 @@ func (s *server) RegisterParty(ctx context.Context, in *pb.RegisterPartyRequest)
 	_ = tx.Commit()
 	return &pb.RegisterPartyResponse{Code: pb.ResponseCode_OK, PartyId: int32(partyId), AuthKey: authKey}, nil
 }
+
+// PlacePoster will add a poster to the database at a specific location.
 func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.PlacementResponse, error) {
 	if in.GetLocation() == nil {
 		return &pb.PlacementResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("location of poster not set")
@@ -524,6 +539,8 @@ func (s *server) PlacePoster(ctx context.Context, in *pb.PlacementRequest) (*pb.
 	}
 	return &pb.PlacementResponse{Code: pb.ResponseCode_OK, PosterId: int32(id)}, nil
 }
+
+// RemovePoster will attempt to remove a poster from the database at a specific location.
 func (s *server) RemovePoster(ctx context.Context, in *pb.RemovePosterRequest) (*pb.RemovePosterResponse, error) {
 	if in.GetUserId() == 0 {
 		return &pb.RemovePosterResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("userId not set")
@@ -572,6 +589,8 @@ func (s *server) RemovePoster(ctx context.Context, in *pb.RemovePosterRequest) (
 	}
 	return &pb.RemovePosterResponse{Code: pb.ResponseCode_OK, Posterid: poster.posterId}, nil
 }
+
+// RegisterAccount will create a new user account.
 func (s *server) RegisterAccount(ctx context.Context, in *pb.RegisterAccountRequest) (*pb.RegisterAccountResponse, error) {
 	if in.GetUsername() == "" {
 		return &pb.RegisterAccountResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("username can't be empty")
@@ -625,6 +644,8 @@ func (s *server) RegisterAccount(ctx context.Context, in *pb.RegisterAccountRequ
 	_ = tx.Commit()
 	return &pb.RegisterAccountResponse{Code: pb.ResponseCode_OK}, nil
 }
+
+// LoginAccount will allow a user to login using their username and password.
 func (s *server) LoginAccount(ctx context.Context, in *pb.LoginRequest) (*pb.LoginResponse, error) {
 	if in.GetUsername() == "" {
 		return &pb.LoginResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("username not supplied")
@@ -668,6 +689,9 @@ func (s *server) LoginAccount(ctx context.Context, in *pb.LoginRequest) (*pb.Log
 
 	return &pb.LoginResponse{AuthKey: accessToken, Code: pb.ResponseCode_OK, Party: result.PartyName, UserId: int32(result.UserId), PartyId: int32(result.PartyId)}, nil
 }
+
+// RetrieveUpdates will request all changes to the poster database that have been made since
+// the time specified in the lastupdated field in the request
 func (s *server) RetrieveUpdates(ctx context.Context, in *pb.UpdateRequest) (*pb.UpdateResponse, error) {
 	if in.GetAuthKey() == "" {
 		return &pb.UpdateResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("no authkey provided")
@@ -712,6 +736,8 @@ func (s *server) RetrieveUpdates(ctx context.Context, in *pb.UpdateRequest) (*pb
 	}
 	return &pb.UpdateResponse{Posters: posters, Code: pb.ResponseCode_OK}, nil
 }
+
+// RetrieveParties will return a list of all parties available for a user to join
 func (s *server) RetrieveParties(ctx context.Context, in *pb.RetrievePartiesRequest) (*pb.RetrievePartiesResponse, error) {
 	if in.GetAuthKey() == "" {
 		return &pb.RetrievePartiesResponse{Code: pb.ResponseCode_FAILED}, fmt.Errorf("auth key is empty")
